@@ -15,6 +15,9 @@ An interactive system design course and practice site.
   directly (instances, error rate, write cost, balancing mode), set a connection's network distance and traffic weight,
   build components from scratch in **Mine → New component**, and export/import designs as JSON.
   Challenges allow products and sizes only.
+- **Host machines**: put several components on one shared machine (e.g. a VPS running Docker containers). They share its
+  CPU and network, the host carries the cost, its measured background CPU is taken into account, and killing it takes
+  everything on it down. `designs/coolify-vps.json` is a snapshot of a real Coolify server; load it with **Import**.
 - **Cheatsheets**: latency numbers, estimation, availability, hardware rules of thumb, real-world products, interview framework.
 
 Product and hardware figures are rough, illustrative ballparks, not benchmarks or price quotes.

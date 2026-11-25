@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CATALOG, specOf, hasCustom, displayName, findProduct } from '../sim/catalog.js';
+import { CATALOG, specOf, hasCustom, displayName, findProduct, hostSpec } from '../sim/catalog.js';
 import { fmtRps } from '../sim/simulate.js';
 import Icon from './Icon.jsx';
 
@@ -47,6 +47,10 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
   const [pendingFrom, setPendingFrom] = useState(null); // tap-to-connect mode
 
   const byId = Object.fromEntries(design.nodes.map((n) => [n.id, n]));
+  // the canvas grows to fit big designs
+  const W = Math.max(CANVAS_W, ...design.nodes.map((n) => n.x + NW + 220));
+  const H = Math.max(CANVAS_H, ...design.nodes.map((n) => n.y + NH + 160));
+  const hosts = allowCustom ? design.hosts || [] : [];
 
   // when a component is added, make sure it is visible
   const count = useRef(design.nodes.length);
@@ -104,8 +108,8 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
     const move = (e) => {
       const p = toCanvas(e);
       if (drag) {
-        const x = Math.max(0, Math.min(CANVAS_W - NW, Math.round((p.x - drag.dx) / 10) * 10));
-        const y = Math.max(0, Math.min(CANVAS_H - NH, Math.round((p.y - drag.dy) / 10) * 10));
+        const x = Math.max(0, Math.min(6000, Math.round((p.x - drag.dx) / 10) * 10));
+        const y = Math.max(30, Math.min(4000, Math.round((p.y - drag.dy) / 10) * 10));
         const n = byId[drag.id];
         if (n && (n.x !== x || n.y !== y)) {
           onChange({ ...design, nodes: design.nodes.map((m) => (m.id === drag.id ? { ...m, x, y } : m)) }, { transient: true });
@@ -153,8 +157,8 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
       ...(product ? { product: product.id } : {}),
       id: newId('n'),
       type,
-      x: Math.max(0, Math.min(CANVAS_W - NW, Math.round((p.x - NW / 2) / 10) * 10)),
-      y: Math.max(0, Math.min(CANVAS_H - NH, Math.round((p.y - NH / 2) / 10) * 10)),
+      x: Math.max(0, Math.round((p.x - NW / 2) / 10) * 10),
+      y: Math.max(30, Math.round((p.y - NH / 2) / 10) * 10),
     };
     onChange({ ...design, nodes: [...design.nodes, node] });
     onSelect({ kind: 'node', id: node.id });
@@ -173,8 +177,36 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
         setPendingFrom(null);
       }}
     >
-      <div className="canvas" ref={canvasRef} style={{ width: CANVAS_W, height: CANVAS_H }}>
-        <svg className="canvas-svg" width={CANVAS_W} height={CANVAS_H}>
+      <div className="canvas" ref={canvasRef} style={{ width: W, height: H }}>
+        {hosts.map((h) => {
+          const inside = design.nodes.filter((n) => n.host === h.id && n.type !== 'client');
+          if (!inside.length) return null;
+          const hs = hostSpec(h);
+          const st = result?.hosts?.[h.id];
+          const x0 = Math.min(...inside.map((n) => n.x)) - 22;
+          const y0 = Math.min(...inside.map((n) => n.y)) - 40;
+          const x1 = Math.max(...inside.map((n) => n.x + NW)) + 26;
+          const y1 = Math.max(...inside.map((n) => n.y + NH)) + 22;
+          const cpu = st ? Math.round(Math.min(st.cpu, 9.99) * 100) : Math.round(hs.reserved * 100);
+          const state = h.failed ? 'failed' : st && st.util > 1 ? 'over' : st && st.cpu > 0.85 ? 'hot' : '';
+          const isSel = selected?.kind === 'host' && selected.id === h.id;
+          return (
+            <div key={h.id} className={`host-frame ${state ? `host-frame--${state}` : ''} ${isSel ? 'host-frame--sel' : ''}`}
+              style={{ left: x0, top: y0, width: x1 - x0, height: y1 - y0 }}>
+              <button type="button" className="host-label" onPointerDown={(e) => { e.stopPropagation(); onSelect({ kind: 'host', id: h.id }); }}>
+                <Icon name="server" size={15} />
+                <b>{hs.name}</b>
+                <span>{hs.cpu} vCPU · {hs.ram} GB · {hs.disk.toUpperCase()}</span>
+                <span className="host-cpu">
+                  {h.failed ? 'DOWN' : `CPU ${cpu}%`}
+                  <i><em style={{ width: `${Math.min(100, cpu)}%` }} /></i>
+                </span>
+                <span className="host-cost">${hs.cost.toLocaleString()}/mo</span>
+              </button>
+            </div>
+          );
+        })}
+        <svg className="canvas-svg" width={W} height={H}>
           {design.edges.map((e) => {
             const a = byId[e.from];
             const b = byId[e.to];

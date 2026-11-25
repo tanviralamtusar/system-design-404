@@ -36,4 +36,20 @@ ok(specOf({ type: 'app', hw: { cpu: 4 } }, false).capacity === 800, 'hardware is
 const box = build([['u:client'], ['s:server']], [['u', 's']]);
 const media = simulate(box, { rps: 300, readRatio: 1, mediaShare: 1 });
 const st = media.nodes[box.nodes[1].id];
+// ---------- host machines ----------
+const shared = build([['u:client'], ['lb:lb'], ['a1:app', 'a2:app', 'a3:app'], ['d:db']], [['u', 'lb'], ['lb', 'a1'], ['lb', 'a2'], ['lb', 'a3'], ['a1', 'd'], ['a2', 'd'], ['a3', 'd']]);
+shared.hosts = [{ id: 'h1', name: 'Small VPS', cpu: 2, ram: 8, disk: 'ssd', diskGB: 100, bandwidth: 1 }];
+for (const n of shared.nodes) if (n.type !== 'client') n.host = 'h1';
+const tr = { rps: 1200, readRatio: 1 };
+const alone = simulate({ ...shared, hosts: [] }, tr);
+const onHost = simulate(shared, tr);
+ok(alone.errorRate === 0 && onHost.errorRate > 0.2, `3 apps that fit on their own machines overload one 2-vCPU host (${Math.round(onHost.errorRate * 100)}% errors)`);
+ok(onHost.nodes[shared.nodes[2].id].bottleneck.startsWith('Host'), 'hosted component reports the host as its bottleneck');
+ok(onHost.cost === onHost.hosts.h1.cost, `hosted components cost nothing extra; the host pays ($${onHost.cost})`);
+const busy = simulate({ ...shared, hosts: [{ ...shared.hosts[0], cpu: 16, reserved: 0.9 }] }, tr);
+ok(busy.errorRate > 0, 'background load (reserved CPU) leaves less room for traffic');
+const dead = simulate(shared, tr, { failed: ['h1'] });
+ok(dead.errorRate === 1, 'killing the host takes down everything on it');
+ok(simulate(shared, tr, { allowCustom: false }).errorRate === 0, 'hosts are ignored in challenges');
+
 ok(st.bottleneck === 'Network' && media.errorRate > 0.1, `image-serving box is network-bound (${Math.round(st.mbps)} Mbps, ${Math.round(media.errorRate * 100)}% errors)`);

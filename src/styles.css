@@ -559,3 +559,28 @@ td:last-child { font-weight: 700; white-space: nowrap; }
 }
 .pal-mine-row .pal-cost { display: none; }
 .pal-mine-row .pal-item { grid-template-columns: auto 1fr; }
+
+/* host machines */
+.canvas-svg { pointer-events: none; }
+.wire-hit { pointer-events: stroke; }
+.host-frame { position: absolute; border: 2px dashed var(--ink-2); border-radius: 16px; background: color-mix(in srgb, var(--violet) 22%, transparent); }
+.host-frame--hot { border-color: var(--warn); background: color-mix(in srgb, var(--warn-bg) 45%, transparent); }
+.host-frame--over { border-color: var(--bad); background: color-mix(in srgb, var(--bad-bg) 45%, transparent); }
+.host-frame--failed { border-color: var(--bad); background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--bad-bg) 60%, transparent) 0 8px, transparent 8px 16px); }
+.host-frame--sel { outline: 3px solid var(--pkt-req); outline-offset: 3px; }
+.host-label {
+  position: absolute; left: 12px; top: -15px; display: flex; align-items: center; gap: 8px;
+  padding: 4px 10px; border: 1.5px solid var(--ink); border-radius: 9px; background: var(--card); box-shadow: var(--pop);
+  font-size: 11.5px; cursor: pointer; white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden;
+}
+.host-label > span { color: var(--muted); }
+.host-cpu { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; color: var(--ink) !important; }
+.host-cpu i { display: inline-block; width: 46px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.host-cpu em { display: block; height: 100%; background: var(--good); }
+.host-frame--hot .host-cpu em { background: var(--warn); }
+.host-frame--over .host-cpu em, .host-frame--failed .host-cpu em { background: var(--bad); }
+.host-cost { font-weight: 700; }
+.member-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 220px; overflow: auto; }
+.member-list button { display: flex; gap: 6px; align-items: center; width: 100%; text-align: left; border: 0; background: none; padding: 4px 6px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+.member-list button:hover { background: var(--sheet); }
+.member-list em { color: var(--bad); font-style: normal; }

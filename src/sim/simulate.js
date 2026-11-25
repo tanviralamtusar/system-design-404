@@ -1,4 +1,4 @@
-import { CATALOG, specOf, displayName, LB_TYPES } from './catalog.js';
+import { CATALOG, specOf, displayName, LB_TYPES, hostSpec, vcpuOf } from './catalog.js';
 
 // A small steady-state traffic model.
 // Traffic flows from Users through the graph as fractions of requests per second.
@@ -42,13 +42,25 @@ export function normTraffic(t) {
 export function simulate(design, trafficIn, opts = {}) {
   const traffic = normTraffic(trafficIn);
   const allowCustom = opts.allowCustom !== false;
-  const failed = new Set([...(opts.failed || []), ...design.nodes.filter((n) => n.failed).map((n) => n.id)]);
+  // Host machines (Design Lab only): components on a host share its CPU and network.
+  const hosts = allowCustom ? (design.hosts || []).map((h) => ({ ...hostSpec(h), id: h.id })) : [];
+  const hostById = Object.fromEntries(hosts.map((h) => [h.id, h]));
+  const hostOf = (n) => (n.type !== 'client' && n.host && hostById[n.host] ? hostById[n.host] : null);
+  const deadHosts = new Set([...hosts.filter((h) => design.hosts.find((x) => x.id === h.id)?.failed).map((h) => h.id), ...(opts.failed || []).filter((id) => hostById[id])]);
+
+  const failed = new Set([
+    ...(opts.failed || []),
+    ...design.nodes.filter((n) => n.failed).map((n) => n.id),
+    ...design.nodes.filter((n) => hostOf(n) && deadHosts.has(n.host)).map((n) => n.id), // a dead host takes everything on it down
+  ]);
   const byId = Object.fromEntries(design.nodes.map((n) => [n.id, n]));
   const spec = Object.fromEntries(design.nodes.map((n) => [n.id, specOf(n, allowCustom)]));
+  const vcpu = Object.fromEntries(design.nodes.map((n) => [n.id, vcpuOf(n)]));
   const kids = {};
   for (const n of design.nodes) kids[n.id] = [];
   for (const e of design.edges) if (byId[e.from] && byId[e.to]) kids[e.from].push(e);
-  const ctx0 = { design, traffic, byId, kids, failed, spec, allowCustom };
+  const nodeHost = Object.fromEntries(design.nodes.map((n) => [n.id, hostOf(n)?.id || null]));
+  const ctx0 = { design, traffic, byId, kids, failed, spec, allowCustom, nodeHost };
 
   const drop = {};
   for (const n of design.nodes) drop[n.id] = 0;
@@ -61,18 +73,51 @@ export function simulate(design, trafficIn, opts = {}) {
     return { cpu, net, util: Math.max(cpu, net) };
   };
 
+  // A host is busy with the CPU its components need plus its background load,
+  // and with the bytes they move through its one network card.
+  const hostUtilOf = (r) => {
+    const out = {};
+    for (const h of hosts) {
+      let cores = 0;
+      let bytes = 0;
+      for (const n of design.nodes) {
+        if (hostOf(n)?.id !== h.id) continue;
+        const sp = spec[n.id];
+        if (sp.capacity !== Infinity) cores += (r.load[n.id] / sp.capacity) * vcpu[n.id];
+        bytes += r.net[n.id];
+      }
+      const free = h.cpu * (1 - h.reserved);
+      const cpu = h.reserved + cores / h.cpu;
+      const net = bytes / bytesPerSec(h.bandwidth);
+      // work only competes for the CPU left after background load
+      const util = Math.max(cores / Math.max(free, 0.01), net);
+      out[h.id] = { cpu, net, util, cores, failed: deadHosts.has(h.id), cost: h.cost, name: h.name };
+    }
+    return out;
+  };
+
+  // Each round: measure what the hosts are asked to do (without host throttling), throttle
+  // requests once as they enter an overloaded host, then settle each component's own limits.
   let run;
   let prevUtil = {};
+  let hostState = {};
+  let hostDrop = {};
+  const round = () => {
+    hostState = hostUtilOf(pass(ctx0, drop, prevUtil, {}));
+    hostDrop = Object.fromEntries(Object.entries(hostState).map(([id, h]) => [id, h.util > 1 ? 1 - 1 / h.util : 0]));
+    run = pass(ctx0, drop, prevUtil, hostDrop);
+  };
   for (let iter = 0; iter < 6; iter++) {
-    run = pass(ctx0, drop, prevUtil);
+    round();
     prevUtil = {};
     for (const n of design.nodes) {
       const { util } = utilOf(n.id, run);
-      prevUtil[n.id] = util;
       drop[n.id] = util > 1 ? 1 - 1 / util : 0;
+      const h = nodeHost[n.id];
+      prevUtil[n.id] = h ? Math.max(util, hostState[h].util) : util;
     }
   }
-  run = pass(ctx0, drop, prevUtil);
+  round();
 
   const total = traffic.rps * traffic.peak;
   const served = run.served.reduce((s, [, r]) => s + r, 0);
@@ -88,20 +133,27 @@ export function simulate(design, trafficIn, opts = {}) {
     }
     return sorted[sorted.length - 1][0];
   };
-  const cost = design.nodes.reduce((s, n) => s + spec[n.id].cost, 0);
+  // hosted components are paid for by their host
+  const cost =
+    design.nodes.reduce((s, n) => s + (hostOf(n) ? 0 : spec[n.id].cost), 0) + hosts.reduce((s, h) => s + h.cost, 0);
 
   const nodes = {};
   for (const n of design.nodes) {
     const cap = spec[n.id].capacity;
-    const { cpu, net, util } = utilOf(n.id, run);
+    const own = utilOf(n.id, run);
+    const h = hostOf(n);
+    const hostBound = h && hostState[h.id].util > own.util;
+    const { cpu, net } = own;
+    const util = hostBound ? hostState[h.id].util : own.util;
     nodes[n.id] = {
+      host: h ? h.id : null,
       load: run.load[n.id],
       util,
       cpuUtil: cpu,
       netUtil: net,
       mbps: (run.net[n.id] * 8) / 1e6,
       bandwidth: spec[n.id].bandwidth || null,
-      bottleneck: util <= 0 ? null : net > cpu ? 'Network' : spec[n.id].limit || 'CPU',
+      bottleneck: util <= 0 ? null : hostBound ? `Host (${h.name})` : net > cpu ? 'Network' : spec[n.id].limit || 'CPU',
       capacity: cap,
       latency: effLatency(spec[n.id].latency, util),
       dropped: drop[n.id],
@@ -111,6 +163,7 @@ export function simulate(design, trafficIn, opts = {}) {
 
   return {
     nodes,
+    hosts: hostState,
     edges: run.edgeLoad,
     total,
     served,
@@ -125,7 +178,8 @@ export function simulate(design, trafficIn, opts = {}) {
   };
 }
 
-function pass({ design, traffic, byId, kids, failed, spec, allowCustom }, drop, prevUtil) {
+function pass({ design, traffic, byId, kids, failed, spec, allowCustom, nodeHost }, drop, prevUtil, hostDrop) {
+  let onHost = null; // the host the current request is already running on
   const load = {};
   const net = {};
   const edgeLoad = {};
@@ -287,13 +341,28 @@ function pass({ design, traffic, byId, kids, failed, spec, allowCustom }, drop, 
     const d = drop[id] || 0;
     if (d > 0) fail(kind, rpsIn * d, `${label(id)} overloaded`);
     let rps = rpsIn * (1 - d);
+    const host = nodeHost[id];
+    const hd = host && host !== onHost ? hostDrop[host] || 0 : 0;
+    if (hd > 0) {
+      fail(kind, rps * hd, `Host machine overloaded`);
+      rps *= 1 - hd;
+    }
     const er = spec[id].errorRate;
     if (er > 0) {
       fail(kind, rps * er, `${label(id)} is flaky (${Math.round(er * 100)}% errors)`);
       rps *= 1 - er;
     }
     const lat = latIn + latencyOf(id);
+    const outer = onHost;
+    onHost = host;
+    try {
+      route1(id, type, kind, rps, lat, ctx);
+    } finally {
+      onHost = outer;
+    }
+  }
 
+  function route1(id, type, kind, rps, lat, ctx) {
     switch (type) {
       case 'client':
         return spread(kids[id], kind, rps, lat, null, true, 'Users are not connected to anything');
@@ -398,6 +467,12 @@ export function chaosScan(design, traffic, opts = {}) {
     const r = simulate(design, traffic, { ...opts, failed: [n.id] });
     out.push({ id: n.id, type: n.type, name: displayName(n), errorRate: r.errorRate, backlog: r.backlog });
   }
+  if (opts.allowCustom !== false)
+    for (const h of design.hosts || []) {
+      if (h.failed) continue;
+      const r = simulate(design, traffic, { ...opts, failed: [h.id] });
+      out.push({ id: h.id, type: 'server', name: `Host: ${h.name || 'VPS'}`, isHost: true, errorRate: r.errorRate, backlog: r.backlog });
+    }
   return out;
 }
 

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import LabCanvas, { newId, presetToNode } from '../components/LabCanvas.jsx';
 import Palette from '../components/Palette.jsx';
-import { NodeInspector, EdgeInspector, ComponentBuilder } from '../components/Inspector.jsx';
+import { NodeInspector, EdgeInspector, ComponentBuilder, HostInspector } from '../components/Inspector.jsx';
 import Icon from '../components/Icon.jsx';
-import { CATALOG, SIZES, displayName, findProduct } from '../sim/catalog.js';
+import { CATALOG, SIZES, displayName, findProduct, DEFAULT_HOST } from '../sim/catalog.js';
 import { simulate, evaluate, chaosScan, normTraffic, fmtPct, fmtRps } from '../sim/simulate.js';
 import { CHALLENGES, findChallenge, build } from '../data/challenges.js';
 import { load, save } from '../store.js';
@@ -35,6 +35,17 @@ const TEMPLATES = {
       build([['u:client'], ['rl:ratelimit'], ['gw:gateway'], ['s1:service', 's2:service', 's3:service'], ['c:cache'], ['n:nosql']], [
         ['u', 'rl'], ['rl', 'gw'], ['gw', 's*'], ['s*', 'c'], ['s*', 'n'],
       ]),
+  },
+  onebox: {
+    label: 'Everything on one VPS',
+    make: () => {
+      const d = build([['u:client'], ['t:gateway:traefik'], ['a1:app', 'a2:app', 'a3:server'], ['c:cache:redis'], ['d:db:postgres']], [
+        ['u', 't'], ['t', 'a*'], ['a1', 'c'], ['a2', 'c'], ['a1', 'd'], ['a2', 'd'],
+      ]);
+      d.hosts = [{ id: 'host-vps', ...DEFAULT_HOST, name: 'My VPS' }];
+      for (const n of d.nodes) if (n.type !== 'client') n.host = 'host-vps';
+      return d;
+    },
   },
   events: {
     label: 'Event stream fan-out',
@@ -76,12 +87,26 @@ function sanitizeDesign(raw) {
       }
       return node;
     });
+  const hosts = (Array.isArray(raw.hosts) ? raw.hosts : [])
+    .filter((h) => h && typeof h.id === 'string')
+    .slice(0, 50)
+    .map((h) => {
+      const host = { id: str(h.id, 60), name: str(h.name, 32) || 'VPS', ...nums(h, ['cpu', 'ram', 'diskGB', 'bandwidth', 'reserved', 'cost']) };
+      host.disk = ['hdd', 'ssd', 'nvme'].includes(h.disk) ? h.disk : 'ssd';
+      if (h.failed === true) host.failed = true;
+      return host;
+    });
+  const hostIds = new Set(hosts.map((h) => h.id));
+  for (let i = 0; i < nodes.length; i++) {
+    const h = raw.nodes.find((n) => n && n.id === nodes[i].id)?.host;
+    if (typeof h === 'string' && hostIds.has(h)) nodes[i].host = h;
+  }
   const ids = new Set(nodes.map((n) => n.id));
   const edges = raw.edges
     .filter((e) => e && ids.has(e.from) && ids.has(e.to) && e.from !== e.to)
     .slice(0, 2000)
     .map((e) => ({ id: str(e.id, 60) || newId('e'), from: e.from, to: e.to, ...nums(e, ['latency', 'weight']) }));
-  return { nodes, edges };
+  return hosts.length ? { nodes, edges, hosts } : { nodes, edges };
 }
 
 export default function Lab({ challengeId, navigate }) {
@@ -172,6 +197,7 @@ export default function Lab({ challengeId, navigate }) {
 
   const removeSelected = useCallback(() => {
     if (!selected) return;
+    if (selected.kind === 'host') return; // hosts are removed from their panel
     if (selected.kind === 'node') {
       change({
         nodes: design.nodes.filter((n) => n.id !== selected.id),
@@ -187,6 +213,25 @@ export default function Lab({ challengeId, navigate }) {
     change({ ...design, nodes: design.nodes.map((n) => (n.id === id ? clean({ ...n, ...patch }) : n)) });
   const updateEdge = (id, patch) =>
     change({ ...design, edges: design.edges.map((e) => (e.id === id ? clean({ ...e, ...patch }) : e)) });
+
+  const hostsList = design.hosts || [];
+  const addHost = (nodeId) => {
+    const host = { id: newId('h'), ...DEFAULT_HOST, name: `VPS ${hostsList.length + 1}` };
+    change({
+      ...design,
+      hosts: [...hostsList, host],
+      nodes: nodeId ? design.nodes.map((n) => (n.id === nodeId ? { ...n, host: host.id } : n)) : design.nodes,
+    });
+    if (!nodeId) setSelected({ kind: 'host', id: host.id });
+    showToast(nodeId ? `Moved onto ${host.name}. Set “Runs on” for other components to share it` : `Added ${host.name}. Pick it under “Runs on” for each component`);
+  };
+  const updateHost = (id, patch) =>
+    change({ ...design, hosts: hostsList.map((h) => (h.id === id ? clean({ ...h, ...patch }) : h)) });
+  const deleteHost = (id) => {
+    const rest = hostsList.filter((h) => h.id !== id);
+    change({ ...clean({ ...design, hosts: rest.length ? rest : undefined }), nodes: design.nodes.map((n) => (n.host === id ? clean({ ...n, host: undefined }) : n)) });
+    setSelected(null);
+  };
 
   const saveAsPreset = (node) => {
     const preset = clean({
@@ -273,6 +318,7 @@ export default function Lab({ challengeId, navigate }) {
 
   const selNode = selected?.kind === 'node' ? design.nodes.find((n) => n.id === selected.id) : null;
   const selEdge = selected?.kind === 'edge' ? design.edges.find((e) => e.id === selected.id) : null;
+  const selHost = !challenge && selected?.kind === 'host' ? (design.hosts || []).find((h) => h.id === selected.id) : null;
   const reasons = Object.entries(result.reasons).sort((a, b) => b[1] - a[1]).slice(0, 3);
   const t = traffic;
 
@@ -299,6 +345,11 @@ export default function Lab({ challengeId, navigate }) {
                 <option key={k} value={k}>{tp.label}</option>
               ))}
             </select>
+          )}
+          {!challenge && (
+            <button type="button" className="btn btn--ghost btn--small" onClick={() => addHost(null)} title="A machine that several components share (e.g. a VPS)">
+              <Icon name="server" size={15} /> Host machine
+            </button>
           )}
           {challenge && (
             <button type="button" className="btn btn--ghost btn--small" onClick={() => { change(starter()); setSelected(null); }}>
@@ -435,11 +486,23 @@ export default function Lab({ challengeId, navigate }) {
           <div className="panel">
             {builder ? (
               <ComponentBuilder key={builder.id || 'new'} initial={builder.id ? builder : null} onSave={savePresetFromBuilder} onCancel={() => setBuilder(null)} />
+            ) : selHost ? (
+              <HostInspector
+                host={selHost}
+                stats={result.hosts?.[selHost.id]}
+                members={design.nodes.filter((n) => n.host === selHost.id)}
+                onUpdate={(patch) => updateHost(selHost.id, patch)}
+                onFail={() => updateHost(selHost.id, { failed: !selHost.failed || undefined })}
+                onDelete={() => deleteHost(selHost.id)}
+                onSelectNode={(id) => setSelected({ kind: 'node', id })}
+              />
             ) : selNode ? (
               <NodeInspector
                 node={selNode}
                 stats={result.nodes[selNode.id]}
                 allowCustom={allowCustom}
+                hosts={hostsList}
+                onNewHost={() => addHost(selNode.id)}
                 onUpdate={(patch) => updateNode(selNode.id, patch)}
                 onSavePreset={() => saveAsPreset(selNode)}
                 onFail={() => updateNode(selNode.id, { failed: !selNode.failed || undefined })}
@@ -468,7 +531,7 @@ export default function Lab({ challengeId, navigate }) {
                     {[...chaos.list].sort((a, b) => b.errorRate - a.errorRate).map((c) => {
                       const extra = c.errorRate - chaos.base;
                       return (
-                        <li key={c.id} className={extra > 0.5 ? 'bad' : extra > 0.05 ? 'warn' : 'good'} onClick={() => setSelected({ kind: 'node', id: c.id })}>
+                        <li key={c.id} className={extra > 0.5 ? 'bad' : extra > 0.05 ? 'warn' : 'good'} onClick={() => setSelected({ kind: c.isHost ? 'host' : 'node', id: c.id })}>
                           <Icon name={c.type} size={15} />
                           <span>{c.name}</span>
                           <em>

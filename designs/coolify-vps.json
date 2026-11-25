@@ -1,0 +1,704 @@
+{
+  "app": "system-design-practice",
+  "version": 2,
+  "design": {
+    "nodes": [
+      {
+        "id": "n-1",
+        "type": "client",
+        "x": 40,
+        "y": 400
+      },
+      {
+        "id": "n-2",
+        "type": "gateway",
+        "product": "traefik",
+        "name": "Coolify proxy (Traefik)",
+        "x": 240,
+        "y": 400,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-4",
+        "type": "app",
+        "name": "BotBhai",
+        "x": 470,
+        "y": 60,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-6",
+        "type": "app",
+        "name": "botbhai admin panel",
+        "x": 470,
+        "y": 150,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-8",
+        "type": "app",
+        "name": "botbhai backend",
+        "x": 470,
+        "y": 240,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-a",
+        "type": "app",
+        "name": "botbhai dev",
+        "x": 470,
+        "y": 330,
+        "host": "host-coolify",
+        "failed": true
+      },
+      {
+        "id": "n-c",
+        "type": "app",
+        "name": "open whatsapp",
+        "x": 470,
+        "y": 420,
+        "host": "host-coolify",
+        "failed": true
+      },
+      {
+        "id": "n-d",
+        "type": "app",
+        "name": "omniroute (dev)",
+        "x": 470,
+        "y": 510,
+        "host": "host-coolify",
+        "failed": true
+      },
+      {
+        "id": "n-f",
+        "type": "db",
+        "name": "supabase-botbhai (Postgres)",
+        "product": "postgres",
+        "x": 470,
+        "y": 600,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-g",
+        "type": "server",
+        "name": "N8n",
+        "x": 470,
+        "y": 690,
+        "host": "host-coolify",
+        "failed": true
+      },
+      {
+        "id": "n-h",
+        "type": "app",
+        "name": "modessi",
+        "x": 670,
+        "y": 60,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-j",
+        "type": "app",
+        "name": "modessi-wholesale",
+        "x": 670,
+        "y": 150,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-l",
+        "type": "db",
+        "name": "supabase-modessi (Postgres)",
+        "product": "postgres",
+        "x": 670,
+        "y": 240,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-m",
+        "type": "app",
+        "name": "oddcom-storefront",
+        "x": 870,
+        "y": 60,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-o",
+        "type": "app",
+        "name": "oddcom-api",
+        "x": 870,
+        "y": 150,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-q",
+        "type": "app",
+        "name": "oddcom-admin",
+        "x": 870,
+        "y": 240,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-s",
+        "type": "app",
+        "name": "oddcom-dashboard",
+        "x": 870,
+        "y": 330,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-u",
+        "type": "app",
+        "name": "oddcom-worker",
+        "x": 870,
+        "y": 420,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-v",
+        "type": "app",
+        "name": "oddcom-migrator",
+        "x": 870,
+        "y": 510,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-w",
+        "type": "cache",
+        "name": "Oddcom-data Redis",
+        "product": "redis",
+        "x": 870,
+        "y": 600,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-x",
+        "type": "db",
+        "name": "Oddcom-data Postgres",
+        "product": "postgres",
+        "x": 870,
+        "y": 690,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-y",
+        "type": "server",
+        "name": "bangla-quest-dreams",
+        "x": 1070,
+        "y": 60,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-10",
+        "type": "server",
+        "name": "bangla-quest (redesign)",
+        "x": 1070,
+        "y": 150,
+        "host": "host-coolify",
+        "failed": true
+      },
+      {
+        "id": "n-12",
+        "type": "server",
+        "name": "chor police dakat",
+        "x": 1070,
+        "y": 240,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-14",
+        "type": "server",
+        "name": "draffi",
+        "x": 1070,
+        "y": 330,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-16",
+        "type": "server",
+        "name": "odd-board",
+        "x": 1070,
+        "y": 420,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-18",
+        "type": "server",
+        "name": "selfup ai",
+        "x": 1070,
+        "y": 510,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-1a",
+        "type": "server",
+        "name": "tinyplay-landing",
+        "x": 1070,
+        "y": 600,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-1c",
+        "type": "server",
+        "name": "anymarkdown",
+        "x": 1070,
+        "y": 690,
+        "host": "host-coolify",
+        "failed": true
+      },
+      {
+        "id": "n-1d",
+        "type": "server",
+        "name": "pixelcom",
+        "x": 1070,
+        "y": 780,
+        "host": "host-coolify",
+        "failed": true
+      },
+      {
+        "id": "n-1f",
+        "type": "server",
+        "name": "team-dev-flow",
+        "x": 1070,
+        "y": 870,
+        "host": "host-coolify",
+        "failed": true
+      },
+      {
+        "id": "n-1g",
+        "type": "app",
+        "name": "openreply",
+        "x": 1070,
+        "y": 960,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-1h",
+        "type": "db",
+        "name": "openreply Postgres",
+        "product": "postgres",
+        "x": 1070,
+        "y": 1050,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-1i",
+        "type": "db",
+        "name": "scenic tours (MySQL)",
+        "product": "mysql",
+        "x": 1070,
+        "y": 1140,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-1j",
+        "type": "server",
+        "name": "platiroll",
+        "x": 1270,
+        "y": 60,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-1k",
+        "type": "server",
+        "name": "platiroll SaaS",
+        "x": 1270,
+        "y": 150,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-1m",
+        "type": "server",
+        "name": "platiroll-os",
+        "x": 1270,
+        "y": 240,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-1o",
+        "type": "server",
+        "name": "egg-buster",
+        "x": 1270,
+        "y": 330,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-1q",
+        "type": "server",
+        "name": "oddpay",
+        "x": 1270,
+        "y": 420,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-1s",
+        "type": "server",
+        "name": "slotform",
+        "x": 1270,
+        "y": 510,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-1u",
+        "type": "server",
+        "name": "rightmate backend",
+        "x": 1470,
+        "y": 60,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-1w",
+        "type": "server",
+        "name": "rightmate landing",
+        "x": 1470,
+        "y": 150,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-1y",
+        "type": "server",
+        "name": "c-program-lab",
+        "x": 1670,
+        "y": 60,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-20",
+        "type": "server",
+        "name": "toy Senpai",
+        "x": 1670,
+        "y": 150,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-22",
+        "type": "server",
+        "name": "demo-sites",
+        "x": 1670,
+        "y": 240,
+        "host": "host-coolify",
+        "failed": true
+      },
+      {
+        "id": "n-24",
+        "type": "app",
+        "name": "tradeon",
+        "x": 1870,
+        "y": 60,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-25",
+        "type": "db",
+        "name": "supabase-tradeon (Postgres)",
+        "product": "postgres",
+        "x": 1870,
+        "y": 150,
+        "host": "host-coolify"
+      },
+      {
+        "id": "n-26",
+        "type": "server",
+        "name": "grafana",
+        "x": 2070,
+        "y": 60,
+        "host": "host-coolify",
+        "failed": true
+      },
+      {
+        "id": "n-27",
+        "type": "server",
+        "name": "loki",
+        "x": 2070,
+        "y": 150,
+        "host": "host-coolify",
+        "failed": true
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-3",
+        "from": "n-1",
+        "to": "n-2"
+      },
+      {
+        "id": "e-5",
+        "from": "n-2",
+        "to": "n-4"
+      },
+      {
+        "id": "e-7",
+        "from": "n-2",
+        "to": "n-6"
+      },
+      {
+        "id": "e-9",
+        "from": "n-2",
+        "to": "n-8"
+      },
+      {
+        "id": "e-b",
+        "from": "n-2",
+        "to": "n-a"
+      },
+      {
+        "id": "e-e",
+        "from": "n-2",
+        "to": "n-d"
+      },
+      {
+        "id": "e-i",
+        "from": "n-2",
+        "to": "n-h"
+      },
+      {
+        "id": "e-k",
+        "from": "n-2",
+        "to": "n-j"
+      },
+      {
+        "id": "e-n",
+        "from": "n-2",
+        "to": "n-m"
+      },
+      {
+        "id": "e-p",
+        "from": "n-2",
+        "to": "n-o"
+      },
+      {
+        "id": "e-r",
+        "from": "n-2",
+        "to": "n-q"
+      },
+      {
+        "id": "e-t",
+        "from": "n-2",
+        "to": "n-s"
+      },
+      {
+        "id": "e-z",
+        "from": "n-2",
+        "to": "n-y"
+      },
+      {
+        "id": "e-11",
+        "from": "n-2",
+        "to": "n-10"
+      },
+      {
+        "id": "e-13",
+        "from": "n-2",
+        "to": "n-12"
+      },
+      {
+        "id": "e-15",
+        "from": "n-2",
+        "to": "n-14"
+      },
+      {
+        "id": "e-17",
+        "from": "n-2",
+        "to": "n-16"
+      },
+      {
+        "id": "e-19",
+        "from": "n-2",
+        "to": "n-18"
+      },
+      {
+        "id": "e-1b",
+        "from": "n-2",
+        "to": "n-1a"
+      },
+      {
+        "id": "e-1e",
+        "from": "n-2",
+        "to": "n-1d"
+      },
+      {
+        "id": "e-1l",
+        "from": "n-2",
+        "to": "n-1k"
+      },
+      {
+        "id": "e-1n",
+        "from": "n-2",
+        "to": "n-1m"
+      },
+      {
+        "id": "e-1p",
+        "from": "n-2",
+        "to": "n-1o"
+      },
+      {
+        "id": "e-1r",
+        "from": "n-2",
+        "to": "n-1q"
+      },
+      {
+        "id": "e-1t",
+        "from": "n-2",
+        "to": "n-1s"
+      },
+      {
+        "id": "e-1v",
+        "from": "n-2",
+        "to": "n-1u"
+      },
+      {
+        "id": "e-1x",
+        "from": "n-2",
+        "to": "n-1w"
+      },
+      {
+        "id": "e-1z",
+        "from": "n-2",
+        "to": "n-1y"
+      },
+      {
+        "id": "e-21",
+        "from": "n-2",
+        "to": "n-20"
+      },
+      {
+        "id": "e-23",
+        "from": "n-2",
+        "to": "n-22"
+      },
+      {
+        "id": "e-28",
+        "from": "n-4",
+        "to": "n-f"
+      },
+      {
+        "id": "e-29",
+        "from": "n-6",
+        "to": "n-f"
+      },
+      {
+        "id": "e-2a",
+        "from": "n-8",
+        "to": "n-f"
+      },
+      {
+        "id": "e-2b",
+        "from": "n-a",
+        "to": "n-f"
+      },
+      {
+        "id": "e-2c",
+        "from": "n-c",
+        "to": "n-f"
+      },
+      {
+        "id": "e-2d",
+        "from": "n-d",
+        "to": "n-f"
+      },
+      {
+        "id": "e-2e",
+        "from": "n-h",
+        "to": "n-l"
+      },
+      {
+        "id": "e-2f",
+        "from": "n-j",
+        "to": "n-l"
+      },
+      {
+        "id": "e-2g",
+        "from": "n-m",
+        "to": "n-x"
+      },
+      {
+        "id": "e-2h",
+        "from": "n-m",
+        "to": "n-w"
+      },
+      {
+        "id": "e-2i",
+        "from": "n-o",
+        "to": "n-x"
+      },
+      {
+        "id": "e-2j",
+        "from": "n-o",
+        "to": "n-w"
+      },
+      {
+        "id": "e-2k",
+        "from": "n-q",
+        "to": "n-x"
+      },
+      {
+        "id": "e-2l",
+        "from": "n-q",
+        "to": "n-w"
+      },
+      {
+        "id": "e-2m",
+        "from": "n-s",
+        "to": "n-x"
+      },
+      {
+        "id": "e-2n",
+        "from": "n-s",
+        "to": "n-w"
+      },
+      {
+        "id": "e-2o",
+        "from": "n-u",
+        "to": "n-x"
+      },
+      {
+        "id": "e-2p",
+        "from": "n-u",
+        "to": "n-w"
+      },
+      {
+        "id": "e-2q",
+        "from": "n-v",
+        "to": "n-x"
+      },
+      {
+        "id": "e-2r",
+        "from": "n-v",
+        "to": "n-w"
+      },
+      {
+        "id": "e-2s",
+        "from": "n-24",
+        "to": "n-25"
+      },
+      {
+        "id": "e-2t",
+        "from": "n-2",
+        "to": "n-1g"
+      },
+      {
+        "id": "e-2u",
+        "from": "n-1g",
+        "to": "n-1h"
+      }
+    ],
+    "hosts": [
+      {
+        "id": "host-coolify",
+        "name": "Coolify VPS (localhost)",
+        "cpu": 4,
+        "ram": 16,
+        "disk": "ssd",
+        "diskGB": 207,
+        "bandwidth": 1,
+        "reserved": 0.55
+      }
+    ]
+  },
+  "traffic": {
+    "rps": 10,
+    "readRatio": 0.9,
+    "mediaShare": 0,
+    "botShare": 0,
+    "peak": 1
+  },
+  "presets": []
+}

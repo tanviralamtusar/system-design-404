@@ -282,6 +282,26 @@ export const hasCustom = (node) =>
   (!!node.hw && Object.keys(node.hw).length > 0) ||
   (!!node.custom && Object.entries(node.custom).some(([k, v]) => (k === 'lbMode' ? v === 'equal' : typeof v === 'number')));
 
+// ---------- host machines ----------
+// A host is one physical/virtual machine that several components run on (e.g. a VPS running
+// many Docker containers). Hosted components share its CPU and network; the host carries the cost.
+export const DEFAULT_HOST = { name: 'VPS', cpu: 4, ram: 16, disk: 'ssd', diskGB: 200, bandwidth: 1, reserved: 0 };
+
+export function hostSpec(host) {
+  const h = { ...DEFAULT_HOST, ...host };
+  h.reserved = Math.max(0, Math.min(0.95, h.reserved || 0));
+  h.cost = typeof host.cost === 'number' ? host.cost : Math.round(hwCost(h));
+  return h;
+}
+
+// vCPUs a component would need running flat out (its own capacity is reached at this many cores).
+export function vcpuOf(node) {
+  const instances = Math.max(1, Math.round(node.custom?.instances || 1));
+  if (node.hw?.cpu) return node.hw.cpu * instances;
+  const ref = HW_REF[node.type]?.cpu ?? 1;
+  return ref * (SIZES[node.size]?.cap ?? 1) * instances;
+}
+
 export function displayName(node) {
   return node.name || (node.product && findProduct(node.product)?.name) || CATALOG[node.type].label;
 }

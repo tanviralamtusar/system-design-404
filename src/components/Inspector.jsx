@@ -3,7 +3,7 @@ import Icon from './Icon.jsx';
 import {
   CATALOG, PALETTE_ORDER, PRODUCTS, SIZES, SIZABLE, LB_TYPES, DB_TYPES,
   HW_REF, DISKS, CPU_OPTIONS, RAM_OPTIONS, BANDWIDTH_OPTIONS,
-  specOf, hasCustom, displayName, findProduct, hardwareOf,
+  specOf, hasCustom, displayName, findProduct, hardwareOf, hostSpec, hwCost,
 } from '../sim/catalog.js';
 import { fmtPct, fmtRps } from '../sim/simulate.js';
 
@@ -196,7 +196,125 @@ function ProductPicker({ type, value, onChange }) {
   );
 }
 
-export function NodeInspector({ node, stats, allowCustom, onUpdate, onSavePreset, onFail, onDup, onDelete }) {
+// One machine several components run on (e.g. a VPS running many Docker containers).
+export function HostInspector({ host, stats, members, onUpdate, onFail, onDelete, onSelectNode }) {
+  const hs = hostSpec(host);
+  const setNum = (key, raw, { min = 0, max = Infinity, scale = 1 } = {}) => {
+    if (raw === '') return onUpdate({ [key]: undefined });
+    const v = Number(raw);
+    if (Number.isFinite(v) && v >= min) onUpdate({ [key]: Math.min(max, v) / scale });
+  };
+  return (
+    <>
+      <p className="panel-label">
+        <Icon name="server" size={15} /> Host machine
+      </p>
+      <p className="muted">
+        One machine that {members.length} component{members.length === 1 ? '' : 's'} share. They compete for its CPU and network, it costs one
+        monthly price, and if it dies they all die with it.
+      </p>
+      <label className="field">
+        <span>Name</span>
+        <input type="text" maxLength={32} value={host.name || ''} placeholder="VPS" onChange={(e) => onUpdate({ name: e.target.value || undefined })} />
+      </label>
+      <div className="custom-grid">
+        <label className="field">
+          <span>CPU</span>
+          <select className="select select--full" value={hs.cpu} onChange={(e) => onUpdate({ cpu: +e.target.value })}>
+            {CPU_OPTIONS.map((v) => <option key={v} value={v}>{v} vCPU</option>)}
+          </select>
+        </label>
+        <label className="field">
+          <span>RAM</span>
+          <select className="select select--full" value={hs.ram} onChange={(e) => onUpdate({ ram: +e.target.value })}>
+            {RAM_OPTIONS.map((v) => <option key={v} value={v}>{fmtGB(v)}</option>)}
+          </select>
+        </label>
+        <label className="field">
+          <span>Disk</span>
+          <select className="select select--full" value={hs.disk} onChange={(e) => onUpdate({ disk: e.target.value })}>
+            {Object.entries(DISKS).map(([k, d]) => <option key={k} value={k}>{d.label}</option>)}
+          </select>
+        </label>
+        <label className="field">
+          <span>Disk size <small>GB</small></span>
+          <input type="number" min="1" value={hs.diskGB} onChange={(e) => setNum('diskGB', e.target.value, { min: 1 })} />
+        </label>
+        <label className="field">
+          <span>Bandwidth</span>
+          <select className="select select--full" value={hs.bandwidth} onChange={(e) => onUpdate({ bandwidth: +e.target.value })}>
+            {BANDWIDTH_OPTIONS.map((v) => <option key={v} value={v}>{fmtBw(v)}</option>)}
+          </select>
+        </label>
+        <label className="field">
+          <span>Background CPU <small>%</small></span>
+          <input type="number" min="0" max="95" step="1" placeholder="0" value={host.reserved != null ? Math.round(host.reserved * 100) : ''}
+            onChange={(e) => setNum('reserved', e.target.value, { max: 95, scale: 100 })} />
+        </label>
+        <label className="field field--wide">
+          <span>Monthly price <small>$ (what you actually pay)</small></span>
+          <input type="number" min="0" placeholder={String(Math.round(hwCost(hs)))} value={host.cost ?? ''} onChange={(e) => setNum('cost', e.target.value)} />
+        </label>
+      </div>
+      <p className="field-note">Background CPU is load that is there without any traffic: idle containers, databases, builds, cron jobs. Copy it from your monitoring.</p>
+      {stats && (
+        <dl className="stats">
+          <div><dt>CPU</dt><dd className={stats.util > 1 ? 'bad' : stats.cpu > 0.85 ? 'warn' : ''}>{Math.round(stats.cpu * 100)}%</dd></div>
+          <div><dt>Traffic uses</dt><dd>{stats.cores.toFixed(2)} vCPU</dd></div>
+          <div><dt>Network</dt><dd className={stats.net > 0.85 ? 'warn' : ''}>{Math.round(stats.net * 100)}%</dd></div>
+          <div><dt>Cost</dt><dd>${hs.cost.toLocaleString()}/mo</dd></div>
+        </dl>
+      )}
+      {members.length > 0 && (
+        <details className="custom">
+          <summary>Runs {members.length} components</summary>
+          <ul className="member-list">
+            {members.map((n) => (
+              <li key={n.id}>
+                <button type="button" onClick={() => onSelectNode(n.id)}>
+                  <Icon name={n.type} size={14} /> {displayName(n)}
+                  {n.failed && <em> (down)</em>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      <div className="row">
+        <button type="button" className={`btn btn--small ${host.failed ? '' : 'btn--rust'}`} onClick={onFail}>
+          <Icon name={host.failed ? 'reset' : 'flame'} size={15} /> {host.failed ? 'Bring back' : 'Kill this machine'}
+        </button>
+        <button type="button" className="btn btn--small btn--ghost" onClick={onDelete} title="Components stay, each on its own machine">
+          Remove host
+        </button>
+      </div>
+    </>
+  );
+}
+
+function HostPicker({ node, hosts, onUpdate, onNewHost }) {
+  return (
+    <label className="field">
+      <span>Runs on</span>
+      <select
+        className="select select--full"
+        value={node.host && hosts.some((h) => h.id === node.host) ? node.host : ''}
+        onChange={(e) => {
+          if (e.target.value === '__new') onNewHost();
+          else onUpdate({ host: e.target.value || undefined });
+        }}
+      >
+        <option value="">Its own machine</option>
+        {hosts.map((h) => (
+          <option key={h.id} value={h.id}>{h.name || 'VPS'} (shared host)</option>
+        ))}
+        <option value="__new">+ New host machine…</option>
+      </select>
+    </label>
+  );
+}
+
+export function NodeInspector({ node, stats, allowCustom, hosts = [], onNewHost, onUpdate, onSavePreset, onFail, onDup, onDelete }) {
   const c = CATALOG[node.type];
   const base = specOf({ ...node, custom: undefined }); // product + size defaults, one instance
   const live = specOf(node, allowCustom);
@@ -216,6 +334,7 @@ export function NodeInspector({ node, stats, allowCustom, onUpdate, onSavePreset
             <input type="text" value={node.name || ''} placeholder={displayName({ ...node, name: undefined })} maxLength={28}
               onChange={(e) => onUpdate({ name: e.target.value || undefined })} />
           </label>
+          {allowCustom && <HostPicker node={node} hosts={hosts} onUpdate={onUpdate} onNewHost={onNewHost} />}
           <ProductPicker type={node.type} value={node.product} onChange={(product) => onUpdate({ product })} />
           {SIZABLE.includes(node.type) && !(allowCustom && node.hw) && (
             <SizePicker value={node.size || 'M'} onChange={(k) => onUpdate({ size: k === 'M' ? undefined : k })} />
