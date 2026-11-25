@@ -17,8 +17,9 @@ export function build(columns, links) {
       const gap = part.length > 5 ? 95 : 110;
       const top = 370 - ((part.length - 1) * gap) / 2;
       part.forEach((spec, ri) => {
-        const [name, type] = spec.split(':');
+        const [name, type, product] = spec.split(':'); // "name:type" or "name:type:productId"
         const node = { id: uid('n'), type, x, y: Math.round(top + ri * gap) - 35 };
+        if (product) node.product = product;
         nodes.push(node);
         named[name] = node.id;
       });
@@ -44,6 +45,20 @@ function expand(pattern, named) {
 const many = (prefix, type, n) => Array.from({ length: n }, (_, i) => `${prefix}${i + 1}:${type}`);
 
 export const CHALLENGES = [
+  {
+    id: 'weekend-project',
+    level: 'Beginner',
+    title: 'Weekend project',
+    story:
+      'You built a habit tracker over the weekend. About 30 friends use it. You want it online for less than the price of a pizza a month.',
+    traffic: { rps: 30, readRatio: 0.8 },
+    targets: { maxError: 0.01, maxP95: 100, maxCost: 50 },
+    hints: [
+      'At this size, one machine can do everything: web server, app and database. That’s the Raw server.',
+      'A generic raw server costs $100. Look in the “Real world” tab of the palette for something cheaper.',
+    ],
+    solution: () => build([['u:client'], ['s:server:vps']], [['u', 's']]),
+  },
   {
     id: 'first-launch',
     level: 'Beginner',
@@ -73,6 +88,42 @@ export const CHALLENGES = [
     solution: () =>
       build([['u:client'], ['lb:lb'], many('app', 'app', 4), ['c:cache'], ['d:db']], [
         ['u', 'lb'], ['lb', 'app*'], ['app*', 'c'], ['app*', 'd'],
+      ]),
+  },
+  {
+    id: 'bot-attack',
+    level: 'Intermediate',
+    title: 'Scraper storm',
+    story:
+      'A competitor’s scrapers hammer your price-comparison site: 2,000 real users per second, plus three times that in bot traffic. Real users are getting errors. Fix it without tripling the bill.',
+    traffic: { rps: 2000, readRatio: 0.9, botShare: 3 },
+    targets: { maxError: 0.01, maxP95: 150, maxCost: 1000 },
+    hints: [
+      'Bots use the same servers, cache and database as real users. Scaling up for them is expensive.',
+      'A rate limiter in front of everything rejects most bot requests before they cost you anything.',
+      'Behind the limiter, size the system for real users plus the few bots that slip through.',
+    ],
+    solution: () =>
+      build([['u:client'], ['rl:ratelimit'], ['lb:lb'], many('app', 'app', 4), ['c:cache'], ['d:db']], [
+        ['u', 'rl'], ['rl', 'lb'], ['lb', 'app*'], ['app*', 'c'], ['app*', 'd'],
+      ]),
+  },
+  {
+    id: 'photo-app',
+    level: 'Intermediate',
+    title: 'Photo sharing',
+    story:
+      'A photo-sharing app: 3,000 requests per second, 90% reads, and two-thirds of those reads are image downloads. Images are big; keeping them in the database is crushing it.',
+    traffic: { rps: 3000, readRatio: 0.9, mediaShare: 0.6 },
+    targets: { maxError: 0.01, maxP95: 150, maxCost: 1100 },
+    hints: [
+      'Files don’t belong in a database. Object storage is built for them, and is cheap.',
+      'A CDN answers most image downloads from the edge, so they never reach your servers.',
+      'With files out of the way, the app tier and database only see normal reads and writes.',
+    ],
+    solution: () =>
+      build([['u:client'], ['cdn:cdn'], ['lb:lb'], many('app', 'app', 2), ['c:cache', 'b:blob'], ['d:db']], [
+        ['u', 'cdn'], ['cdn', 'lb'], ['lb', 'app*'], ['app*', 'c'], ['app*', 'b'], ['app*', 'd'],
       ]),
   },
   {

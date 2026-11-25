@@ -41,7 +41,7 @@ export default function App() {
   }, [hash, section]);
 
   let page;
-  if (section === 'learn' && id) page = <Lesson id={id} navigate={navigate} />;
+  if (section === 'learn' && id) page = <Lesson key={id} id={id} navigate={navigate} />;
   else if (section === 'practice' && id) page = <Lab key={id} challengeId={id} navigate={navigate} />;
   else if (section === 'practice') page = <Practice />;
   else if (section === 'lab') page = <Lab navigate={navigate} />;

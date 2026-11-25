@@ -1,3 +1,5 @@
+import { CATALOG, PALETTE_ORDER, PRODUCTS } from '../sim/catalog.js';
+
 const LATENCY = [
   ['L1 cache reference', '1 ns'],
   ['Main memory reference', '100 ns'],
@@ -55,6 +57,17 @@ const STEPS = [
   ['Trade-offs', 'Say out loud what you gave up: consistency for latency, cost for availability.'],
 ];
 
+const HARDWARE = [
+  ['CPU (vCPU)', 'Requests/s scale roughly with cores until RAM, disk or network runs out'],
+  ['RAM for app servers', '~1–2 GB per vCPU; less → swapping, everything slows'],
+  ['RAM for databases', 'Enough to hold the hot data + indexes (buffer pool)'],
+  ['RAM for caches', 'More memory → bigger working set → higher hit rate'],
+  ['HDD', '~100–200 random IOPS, ~10 ms seek; fine for backups and logs'],
+  ['SSD', '~10k–100k IOPS, ~0.1 ms; the default for databases'],
+  ['NVMe', '~500k+ IOPS; for write-heavy or huge databases'],
+  ['1 Gbps network', '≈ 125 MB/s ≈ 6k small JSON responses or 250 × 500 KB images per second'],
+];
+
 export default function Cheatsheets() {
   return (
     <div className="page sheets">
@@ -81,7 +94,35 @@ export default function Cheatsheets() {
         <Table title="Back-of-envelope" head={['Quantity', 'Value']} rows={ESTIMATES} />
         <Table title="Availability (the nines)" head={['Uptime', 'Down / year', 'Down / month']} rows={NINES} />
         <Table title="Which tool for which problem" head={['Symptom', 'Reach for']} rows={PICK} />
+        <Table title="Hardware rules of thumb" head={['Resource', 'Rule of thumb']} rows={HARDWARE} />
       </div>
+
+      <section className="card sheet">
+        <h2>Real-world building blocks</h2>
+        <p className="muted">
+          Ballpark figures for one typical instance, as used in the Design Lab. Real numbers vary hugely with hardware, configuration and workload.
+        </p>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr><th>Component</th><th>Product</th><th>What it’s known for</th><th>~req/s</th><th>~$/mo</th></tr>
+            </thead>
+            <tbody>
+              {PALETTE_ORDER.flatMap((type) =>
+                PRODUCTS.filter((p) => p.type === type).map((p, i) => (
+                  <tr key={p.id}>
+                    <td>{i === 0 ? CATALOG[type].label : ''}</td>
+                    <td><b>{p.name}</b></td>
+                    <td>{p.note}</td>
+                    <td>{p.capacity.toLocaleString()}</td>
+                    <td>${p.cost}</td>
+                  </tr>
+                )),
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section className="card sheet">
         <h2>Consistency vocabulary</h2>

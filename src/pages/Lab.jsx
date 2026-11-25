@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import LabCanvas, { newId, presetToNode } from '../components/LabCanvas.jsx';
+import Palette from '../components/Palette.jsx';
+import { NodeInspector, EdgeInspector, ComponentBuilder } from '../components/Inspector.jsx';
 import Icon from '../components/Icon.jsx';
-import { CATALOG, PALETTE_ORDER, SIZES, SIZABLE, specOf, hasCustom } from '../sim/catalog.js';
-import { simulate, evaluate, chaosScan, fmtPct, fmtRps } from '../sim/simulate.js';
+import { CATALOG, SIZES, displayName, findProduct } from '../sim/catalog.js';
+import { simulate, evaluate, chaosScan, normTraffic, fmtPct, fmtRps } from '../sim/simulate.js';
 import { CHALLENGES, findChallenge, build } from '../data/challenges.js';
 import { load, save } from '../store.js';
 
-const starter = () => ({ nodes: [{ id: newId('n'), type: 'client', x: 60, y: 340 }], edges: [] });
+const starter = () => ({ nodes: [{ id: newId('n'), type: 'client', x: 40, y: 340 }], edges: [] });
+const DEFAULT_TRAFFIC = { rps: 1000, readRatio: 0.9, mediaShare: 0, botShare: 0, peak: 1 };
 
 const TEMPLATES = {
   empty: { label: 'Empty canvas', make: starter },
-  single: {
-    label: 'Single server',
-    make: () => build([['u:client'], ['a:app'], ['d:db']], [['u', 'a'], ['a', 'd']]),
-  },
+  monolith: { label: 'One raw server', make: () => build([['u:client'], ['s:server']], [['u', 's']]) },
+  single: { label: 'App + database', make: () => build([['u:client'], ['a:app'], ['d:db']], [['u', 'a'], ['a', 'd']]) },
   classic: {
     label: 'Classic web app',
     make: () =>
@@ -21,23 +22,75 @@ const TEMPLATES = {
         ['u', 'lb'], ['lb', 'a*'], ['a*', 'c'], ['a*', 'd'], ['a*', 'r'],
       ]),
   },
-  async: {
-    label: 'Queue + workers',
+  realworld: {
+    label: 'Real-world stack (AWS-style)',
     make: () =>
-      build([['u:client'], ['lb:lb'], ['a1:app', 'a2:app'], ['q:queue'], ['w1:worker', 'w2:worker'], ['d:db']], [
-        ['u', 'lb'], ['lb', 'a*'], ['a*', 'q'], ['a*', 'd'], ['q', 'w*'], ['w*', 'd'],
+      build([['u:client'], ['cf:cdn:cloudfront'], ['alb:lb:alb'], ['a1:app:node', 'a2:app:node', 'a3:app:node'], ['r:cache:redis', 's3:blob:s3'], ['pg:db:postgres', 'pr:replica:pg-replica']], [
+        ['u', 'cf'], ['cf', 'alb'], ['alb', 'a*'], ['a*', 'r'], ['a*', 's3'], ['a*', 'pg'], ['a*', 'pr'],
+      ]),
+  },
+  micro: {
+    label: 'Gateway + microservices',
+    make: () =>
+      build([['u:client'], ['rl:ratelimit'], ['gw:gateway'], ['s1:service', 's2:service', 's3:service'], ['c:cache'], ['n:nosql']], [
+        ['u', 'rl'], ['rl', 'gw'], ['gw', 's*'], ['s*', 'c'], ['s*', 'n'],
+      ]),
+  },
+  events: {
+    label: 'Event stream fan-out',
+    make: () =>
+      build([['u:client'], ['lb:lb'], ['a1:app', 'a2:app'], ['k:stream:kafka', 'c:cache'], ['w1:worker', 'w2:worker'], ['d:db']], [
+        ['u', 'lb'], ['lb', 'a*'], ['a*', 'k'], ['a*', 'c'], ['a*', 'd'], ['k', 'w*'], ['w*', 'd'],
       ]),
   },
 };
 
-const RPS_STEPS = [10, 25, 50, 100, 250, 500, 1000, 1500, 2000, 3000, 5000, 7500, 10000, 15000, 20000, 30000, 50000];
+const RPS_STEPS = [10, 25, 50, 100, 250, 500, 1000, 1500, 2000, 3000, 5000, 7500, 10000, 15000, 20000, 30000, 50000, 100000];
+const PEAKS = [1, 1.5, 2, 3, 5, 10];
+
+// Make anything read from a file safe to load.
+function sanitizeDesign(raw) {
+  if (!raw || !Array.isArray(raw.nodes) || !Array.isArray(raw.edges)) throw new Error('No design found in that file');
+  const str = (v, max = 40) => (typeof v === 'string' ? v.slice(0, max) : undefined);
+  const nums = (o, keys) => {
+    if (!o || typeof o !== 'object') return undefined;
+    const out = {};
+    for (const k of keys) if (typeof o[k] === 'number' && Number.isFinite(o[k])) out[k] = o[k];
+    return Object.keys(out).length ? out : undefined;
+  };
+  const nodes = raw.nodes
+    .filter((n) => n && CATALOG[n.type] && typeof n.id === 'string')
+    .slice(0, 300)
+    .map((n) => {
+      const node = { id: str(n.id, 60), type: n.type, x: Math.max(0, Math.min(1800, +n.x || 0)), y: Math.max(0, Math.min(720, +n.y || 0)) };
+      if (str(n.name, 28)) node.name = str(n.name, 28);
+      if (n.product && findProduct(n.product)?.type === n.type) node.product = n.product;
+      if (SIZES[n.size]) node.size = n.size;
+      if (n.failed === true) node.failed = true;
+      const custom = nums(n.custom, ['capacity', 'latency', 'cost', 'hit', 'writeCost', 'instances', 'errorRate']);
+      if (custom || n.custom?.lbMode === 'equal') node.custom = { ...(custom || {}), ...(n.custom?.lbMode === 'equal' ? { lbMode: 'equal' } : {}) };
+      if (n.hw && typeof n.hw === 'object') {
+        const hw = nums(n.hw, ['cpu', 'ram', 'diskGB', 'bandwidth']) || {};
+        if (['hdd', 'ssd', 'nvme'].includes(n.hw.disk)) hw.disk = n.hw.disk;
+        if (Object.keys(hw).length) node.hw = hw;
+      }
+      return node;
+    });
+  const ids = new Set(nodes.map((n) => n.id));
+  const edges = raw.edges
+    .filter((e) => e && ids.has(e.from) && ids.has(e.to) && e.from !== e.to)
+    .slice(0, 2000)
+    .map((e) => ({ id: str(e.id, 60) || newId('e'), from: e.from, to: e.to, ...nums(e, ['latency', 'weight']) }));
+  return { nodes, edges };
+}
 
 export default function Lab({ challengeId, navigate }) {
   const challenge = challengeId ? findChallenge(challengeId) : null;
   const storeKey = challenge ? `ch:${challenge.id}` : 'lab';
+  const allowCustom = !challenge;
 
   const [design, setDesign] = useState(() => load(storeKey, null) || starter());
-  const [traffic, setTraffic] = useState(() => challenge?.traffic || load('lab-traffic', { rps: 1000, readRatio: 0.9 }));
+  const [traffic, setTraffic] = useState(() => normTraffic(challenge?.traffic || load('lab-traffic', DEFAULT_TRAFFIC)));
   const [selected, setSelected] = useState(null);
   const [toast, setToast] = useState(null);
   const [hintsShown, setHintsShown] = useState(0);
@@ -45,22 +98,19 @@ export default function Lab({ challengeId, navigate }) {
   const [chaos, setChaos] = useState(null);
   const [done, setDone] = useState(() => load('done', {}));
   const [presets, setPresets] = useState(() => load('presets', []));
-  const allowCustom = !challenge;
-  const savePresets = (list) => {
-    setPresets(list);
-    save('presets', list);
-  };
+  const [builder, setBuilder] = useState(null); // null | preset being created/edited
   const history = useRef([]);
   const toastTimer = useRef();
+  const fileRef = useRef(null);
 
-  // reload when switching between challenges / sandbox
   useEffect(() => {
     setDesign(load(storeKey, null) || starter());
-    setTraffic(challenge?.traffic || load('lab-traffic', { rps: 1000, readRatio: 0.9 }));
+    setTraffic(normTraffic(challenge?.traffic || load('lab-traffic', DEFAULT_TRAFFIC)));
     setSelected(null);
     setHintsShown(0);
     setSolutionAsk(false);
     setChaos(null);
+    setBuilder(null);
     history.current = [];
   }, [storeKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -68,6 +118,11 @@ export default function Lab({ challengeId, navigate }) {
   useEffect(() => {
     if (!challenge) save('lab-traffic', traffic);
   }, [traffic, challenge]);
+
+  const savePresets = (list) => {
+    setPresets(list);
+    save('presets', list);
+  };
 
   const showToast = useCallback((msg) => {
     setToast(msg);
@@ -77,7 +132,7 @@ export default function Lab({ challengeId, navigate }) {
 
   const change = useCallback(
     (next, opts = {}) => {
-      if (!opts.transient && !opts.noHistory) history.current = [...history.current.slice(-40), design];
+      if (!opts.transient) history.current = [...history.current.slice(-40), design];
       setDesign(next);
       setChaos(null);
     },
@@ -93,7 +148,7 @@ export default function Lab({ challengeId, navigate }) {
   };
 
   const result = useMemo(() => simulate(design, traffic, { allowCustom }), [design, traffic, allowCustom]);
-  const checks = useMemo(() => (challenge ? evaluate(challenge, design, result) : null), [challenge, design, result]);
+  const checks = useMemo(() => (challenge ? evaluate(challenge, design, simulate(design, challenge.traffic, { allowCustom: false })) : null), [challenge, design]);
   const passed = checks?.every((c) => c.ok);
 
   useEffect(() => {
@@ -104,30 +159,15 @@ export default function Lab({ challengeId, navigate }) {
     }
   }, [passed, challenge, done]);
 
-  const addNode = (type, preset) => {
-    // place it in the first free slot of its natural column
-    const col = { client: 0, cdn: 1, lb: 1, app: 2, cache: 3, queue: 3, worker: 4, db: 4, replica: 4 }[type] ?? 2;
-    const x = 40 + col * 190;
-    let y = 40;
+  const addNode = ({ type, product, preset }) => {
+    const col = { client: 0, cdn: 1, ratelimit: 1, lb: 2, gateway: 2, server: 3, app: 3, service: 3, cache: 4, queue: 4, stream: 4, blob: 5, worker: 5, db: 6, replica: 6, nosql: 6 }[type] ?? 3;
+    const x = 40 + col * 180;
+    let y = 30;
     while (design.nodes.some((n) => Math.abs(n.x - x) < 150 && Math.abs(n.y - y) < 80) && y < 680) y += 90;
-    const node = { ...(preset ? presetToNode(preset, allowCustom) : {}), id: newId('n'), type, x, y };
+    const node = { ...(preset ? presetToNode(preset, allowCustom) : {}), ...(product ? { product } : {}), id: newId('n'), type, x, y };
     change({ ...design, nodes: [...design.nodes, node] });
     setSelected({ kind: 'node', id: node.id });
-  };
-
-  const updateNode = (id, patch) =>
-    change({ ...design, nodes: design.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)) });
-
-  const saveAsPreset = (node) => {
-    const preset = {
-      id: newId('p'),
-      type: node.type,
-      name: node.name || `${SIZES[node.size || 'M'].label} ${CATALOG[node.type].label.toLowerCase()}`,
-      size: node.size || 'M',
-      custom: hasCustom(node) ? { ...node.custom } : undefined,
-    };
-    savePresets([...presets, preset]);
-    showToast(`Saved “${preset.name}” to My components`);
+    setBuilder(null);
   };
 
   const removeSelected = useCallback(() => {
@@ -143,20 +183,74 @@ export default function Lab({ challengeId, navigate }) {
     setSelected(null);
   }, [selected, design, change]);
 
-  const toggleFail = (id) =>
-    change({ ...design, nodes: design.nodes.map((n) => (n.id === id ? { ...n, failed: !n.failed } : n)) });
+  const updateNode = (id, patch) =>
+    change({ ...design, nodes: design.nodes.map((n) => (n.id === id ? clean({ ...n, ...patch }) : n)) });
+  const updateEdge = (id, patch) =>
+    change({ ...design, edges: design.edges.map((e) => (e.id === id ? clean({ ...e, ...patch }) : e)) });
+
+  const saveAsPreset = (node) => {
+    const preset = clean({
+      id: newId('p'),
+      type: node.type,
+      name: displayName(node),
+      product: node.product,
+      size: node.size,
+      hw: node.hw ? { ...node.hw } : undefined,
+      custom: node.custom ? { ...node.custom } : undefined,
+    });
+    savePresets([...presets, preset]);
+    showToast(`Saved “${preset.name}” to My components`);
+  };
+
+  const savePresetFromBuilder = (draft) => {
+    const preset = clean({ ...draft, id: draft.id || newId('p') });
+    const exists = presets.some((p) => p.id === preset.id);
+    savePresets(exists ? presets.map((p) => (p.id === preset.id ? preset : p)) : [...presets, preset]);
+    setBuilder(null);
+    showToast(exists ? `Updated “${preset.name}”` : `Added “${preset.name}”. Click it in the palette to place it`);
+  };
 
   const duplicate = (id) => {
     const src = design.nodes.find((n) => n.id === id);
     const copy = { ...src, id: newId('n'), y: Math.min(700, src.y + 90), failed: false };
-    // copy its connections too, so a duplicated server is wired the same way
     const edges = design.edges.flatMap((e) => {
-      if (e.from === id) return [{ id: newId('e'), from: copy.id, to: e.to }];
-      if (e.to === id) return [{ id: newId('e'), from: e.from, to: copy.id }];
+      if (e.from === id) return [{ ...e, id: newId('e'), from: copy.id }];
+      if (e.to === id) return [{ ...e, id: newId('e'), to: copy.id }];
       return [];
     });
     change({ nodes: [...design.nodes, copy], edges: [...design.edges, ...edges] });
     setSelected({ kind: 'node', id: copy.id });
+  };
+
+  const exportDesign = () => {
+    const data = { app: 'system-design-practice', version: 2, design, traffic, presets };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${challenge ? challenge.id : 'design'}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+
+  const importDesign = async (file) => {
+    try {
+      const raw = JSON.parse(await file.text());
+      const next = sanitizeDesign(raw.design || raw);
+      change(next);
+      if (!challenge && raw.traffic) setTraffic(normTraffic(raw.traffic));
+      if (Array.isArray(raw.presets)) {
+        const known = new Set(presets.map((p) => p.id));
+        const extra = raw.presets
+          .filter((p) => p && CATALOG[p.type] && p.type !== 'client' && typeof p.id === 'string' && !known.has(p.id))
+          .map((p) => sanitizeDesign({ nodes: [{ ...p, x: 0, y: 0 }], edges: [] }).nodes[0])
+          .map(({ x, y, failed, ...p }) => ({ ...p, name: p.name || CATALOG[p.type].label }));
+        if (extra.length) savePresets([...presets, ...extra]);
+      }
+      setSelected(null);
+      showToast(`Loaded ${next.nodes.length} components`);
+    } catch (err) {
+      showToast(`Couldn’t load that file: ${err.message}`);
+    }
   };
 
   useEffect(() => {
@@ -180,6 +274,7 @@ export default function Lab({ challengeId, navigate }) {
   const selNode = selected?.kind === 'node' ? design.nodes.find((n) => n.id === selected.id) : null;
   const selEdge = selected?.kind === 'edge' ? design.edges.find((e) => e.id === selected.id) : null;
   const reasons = Object.entries(result.reasons).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const t = traffic;
 
   return (
     <div className="lab">
@@ -189,97 +284,50 @@ export default function Lab({ challengeId, navigate }) {
           <h1 className="lab-title">{challenge ? challenge.title : 'Build anything, then break it'}</h1>
         </div>
         <div className="lab-actions">
-          <button type="button" className="btn btn--ghost" onClick={undo} disabled={!history.current.length} title="Undo (Ctrl+Z)">
-            <Icon name="reset" size={16} /> Undo
+          <button type="button" className="btn btn--ghost btn--small" onClick={undo} disabled={!history.current.length} title="Undo (Ctrl+Z)">
+            <Icon name="reset" size={15} /> Undo
           </button>
           {!challenge && (
-            <select
-              className="select"
-              value=""
-              aria-label="Load a template"
-              onChange={(e) => {
-                if (e.target.value) {
-                  change(TEMPLATES[e.target.value].make());
-                  setSelected(null);
-                }
-              }}
-            >
+            <select className="select" value="" aria-label="Load a template" onChange={(e) => {
+              if (e.target.value) {
+                change(TEMPLATES[e.target.value].make());
+                setSelected(null);
+              }
+            }}>
               <option value="">Load template…</option>
-              {Object.entries(TEMPLATES).map(([k, t]) => (
-                <option key={k} value={k}>{t.label}</option>
+              {Object.entries(TEMPLATES).map(([k, tp]) => (
+                <option key={k} value={k}>{tp.label}</option>
               ))}
             </select>
           )}
           {challenge && (
-            <button type="button" className="btn btn--ghost" onClick={() => { change(starter()); setSelected(null); }}>
-              <Icon name="trash" size={16} /> Start over
+            <button type="button" className="btn btn--ghost btn--small" onClick={() => { change(starter()); setSelected(null); }}>
+              <Icon name="trash" size={15} /> Start over
             </button>
           )}
+          <button type="button" className="btn btn--ghost btn--small" onClick={exportDesign} title="Download this design and your components as JSON">
+            <Icon name="download" size={15} /> Export
+          </button>
+          <button type="button" className="btn btn--ghost btn--small" onClick={() => fileRef.current?.click()} title="Load a design JSON file">
+            <Icon name="upload" size={15} /> Import
+          </button>
+          <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) importDesign(f);
+            e.target.value = '';
+          }} />
         </div>
       </div>
 
       <div className="lab-grid">
-        <aside className="palette" aria-label="Components">
-          <p className="panel-label">Components</p>
-          {PALETTE_ORDER.map((type) => {
-            const c = CATALOG[type];
-            return (
-              <button
-                type="button"
-                key={type}
-                className={`pal-item tone-${c.tone}`}
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('text/x-sd-type', type);
-                  e.dataTransfer.effectAllowed = 'copy';
-                }}
-                onClick={() => addNode(type)}
-                title={c.blurb}
-              >
-                <Icon name={type} size={18} />
-                <span className="pal-name">{c.label}</span>
-                <span className="pal-cost">{c.cost ? `$${c.cost}` : 'free'}</span>
-              </button>
-            );
-          })}
-          <p className="panel-label pal-mine">My components</p>
-          {presets.length === 0 && (
-            <p className="pal-empty">Select a component, set its size or specs, then “Save to My components”.</p>
-          )}
-          {presets.map((pr) => {
-            const c = CATALOG[pr.type];
-            const sp = specOf(presetToNode(pr), allowCustom);
-            const locked = !allowCustom && pr.custom;
-            return (
-              <div key={pr.id} className="pal-mine-row">
-                <button
-                  type="button"
-                  className={`pal-item tone-${c.tone}`}
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData('text/x-sd-preset', pr.id);
-                    e.dataTransfer.effectAllowed = 'copy';
-                  }}
-                  onClick={() => addNode(pr.type, pr)}
-                  title={`${c.label} · ${fmtRps(sp.capacity)} rps · ${sp.latency} ms · $${sp.cost}/mo${locked ? ' (custom numbers are ignored in challenges; size still applies)' : ''}`}
-                >
-                  <Icon name={pr.type} size={18} />
-                  <span className="pal-name">{pr.name}</span>
-                  <span className="pal-cost">${sp.cost}</span>
-                </button>
-                <button
-                  type="button"
-                  className="pal-del"
-                  aria-label={`Remove ${pr.name} from My components`}
-                  title="Remove"
-                  onClick={() => savePresets(presets.filter((x) => x.id !== pr.id))}
-                >
-                  <Icon name="x" size={13} stroke={2.4} />
-                </button>
-              </div>
-            );
-          })}
-        </aside>
+        <Palette
+          presets={presets}
+          allowCustom={allowCustom}
+          onAdd={addNode}
+          onNew={() => { setBuilder({ type: 'server', name: '' }); setSelected(null); }}
+          onEdit={(p) => { setBuilder(p); setSelected(null); }}
+          onDelete={(id) => savePresets(presets.filter((p) => p.id !== id))}
+        />
 
         <section className="stage">
           <div className="metrics-strip">
@@ -289,6 +337,9 @@ export default function Lab({ challengeId, navigate }) {
             <Metric label="p95" value={result.served ? `${Math.round(result.p95)} ms` : '—'} tone={result.p95 > (challenge?.targets.maxP95 ?? 200) ? 'warn' : ''} />
             <Metric label="Cost / mo" value={`$${result.cost.toLocaleString()}`} tone={challenge?.targets.maxCost && result.cost > challenge.targets.maxCost ? 'bad' : ''} />
             <Metric label="Backlog" value={result.backlog < 1 ? 'none' : `+${fmtRps(result.backlog)}/s`} tone={result.backlog >= 1 ? 'warn' : ''} />
+            {result.bots.total > 0 && (
+              <Metric label="Bots blocked" value={fmtPct(result.bots.blocked / result.bots.total)} tone={result.bots.blocked / result.bots.total > 0.5 ? 'good' : 'warn'} />
+            )}
           </div>
           <LabCanvas design={design} onChange={change} result={result} selected={selected} onSelect={setSelected} onToast={showToast} presets={presets} allowCustom={allowCustom} />
           {reasons.length > 0 && (
@@ -311,11 +362,7 @@ export default function Lab({ challengeId, navigate }) {
           {challenge ? (
             <div className="panel">
               <p className="story">{challenge.story}</p>
-              <div className="traffic-fixed">
-                <span><b>{challenge.traffic.rps.toLocaleString()}</b> req/s</span>
-                <span><b>{Math.round(challenge.traffic.readRatio * 100)}%</b> reads</span>
-                <span><b>{Math.round((1 - challenge.traffic.readRatio) * 100)}%</b> writes</span>
-              </div>
+              <TrafficChips traffic={normTraffic(challenge.traffic)} />
               <p className="panel-label">Requirements</p>
               <ul className="checks">
                 {checks.map((c) => (
@@ -328,7 +375,7 @@ export default function Lab({ challengeId, navigate }) {
               </ul>
               {passed && (
                 <div className="win">
-                  <b>All requirements met.</b> Try the kill switch on a few components to see how it holds up, or move on.
+                  <b>All requirements met.</b> Try killing a few components to see how it holds up, or move on.
                   <NextChallenge id={challenge.id} navigate={navigate} />
                 </div>
               )}
@@ -345,15 +392,7 @@ export default function Lab({ challengeId, navigate }) {
                   {!solutionAsk ? (
                     <button type="button" className="btn btn--small btn--ghost" onClick={() => setSolutionAsk(true)}>Show a solution</button>
                   ) : (
-                    <button
-                      type="button"
-                      className="btn btn--small btn--rust"
-                      onClick={() => {
-                        change(challenge.solution());
-                        setSolutionAsk(false);
-                        setSelected(null);
-                      }}
-                    >
+                    <button type="button" className="btn btn--small btn--rust" onClick={() => { change(challenge.solution()); setSolutionAsk(false); setSelected(null); }}>
                       Replace my design?
                     </button>
                   )}
@@ -364,61 +403,57 @@ export default function Lab({ challengeId, navigate }) {
             <div className="panel">
               <p className="panel-label">Traffic</p>
               <label className="slider">
-                <span>Requests / second <b>{traffic.rps.toLocaleString()}</b></span>
-                <input
-                  type="range"
-                  min="0"
-                  max={RPS_STEPS.length - 1}
-                  value={nearestStep(traffic.rps)}
-                  onChange={(e) => setTraffic({ ...traffic, rps: RPS_STEPS[+e.target.value] })}
-                />
+                <span className="slider-head">
+                  Requests / second
+                  <input type="number" min="0" max="1000000" className="num-inline" value={t.rps} aria-label="Requests per second"
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      if (Number.isFinite(v) && v >= 0) setTraffic({ ...t, rps: Math.min(1e6, Math.round(v)) });
+                    }} />
+                </span>
+                <input type="range" min="0" max={RPS_STEPS.length - 1} value={nearestStep(t.rps)} onChange={(e) => setTraffic({ ...t, rps: RPS_STEPS[+e.target.value] })} />
               </label>
               <label className="slider">
-                <span>Reads <b>{Math.round(traffic.readRatio * 100)}%</b> · writes <b>{Math.round((1 - traffic.readRatio) * 100)}%</b></span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="5"
-                  value={Math.round(traffic.readRatio * 100)}
-                  onChange={(e) => setTraffic({ ...traffic, readRatio: +e.target.value / 100 })}
-                />
+                <span>Peak multiplier <b>×{t.peak}</b> {t.peak > 1 && <small>→ {fmtRps(t.rps * t.peak)} req/s</small>}</span>
+                <input type="range" min="0" max={PEAKS.length - 1} value={Math.max(0, PEAKS.indexOf(t.peak))} onChange={(e) => setTraffic({ ...t, peak: PEAKS[+e.target.value] })} />
+              </label>
+              <label className="slider">
+                <span>Reads <b>{Math.round(t.readRatio * 100)}%</b> · writes <b>{Math.round((1 - t.readRatio) * 100)}%</b></span>
+                <input type="range" min="0" max="100" step="5" value={Math.round(t.readRatio * 100)} onChange={(e) => setTraffic({ ...t, readRatio: +e.target.value / 100 })} />
+              </label>
+              <label className="slider">
+                <span>File downloads <b>{Math.round(t.mediaShare * 100)}%</b> <small>of reads (images, video)</small></span>
+                <input type="range" min="0" max="100" step="5" value={Math.round(t.mediaShare * 100)} onChange={(e) => setTraffic({ ...t, mediaShare: +e.target.value / 100 })} />
+              </label>
+              <label className="slider">
+                <span>Bot traffic <b>+{Math.round(t.botShare * 100)}%</b> <small>on top of real users</small></span>
+                <input type="range" min="0" max="500" step="25" value={Math.round(t.botShare * 100)} onChange={(e) => setTraffic({ ...t, botShare: +e.target.value / 100 })} />
               </label>
             </div>
           )}
 
           <div className="panel">
-            {selNode ? (
+            {builder ? (
+              <ComponentBuilder key={builder.id || 'new'} initial={builder.id ? builder : null} onSave={savePresetFromBuilder} onCancel={() => setBuilder(null)} />
+            ) : selNode ? (
               <NodeInspector
                 node={selNode}
                 stats={result.nodes[selNode.id]}
                 allowCustom={allowCustom}
                 onUpdate={(patch) => updateNode(selNode.id, patch)}
                 onSavePreset={() => saveAsPreset(selNode)}
-                onFail={() => toggleFail(selNode.id)}
+                onFail={() => updateNode(selNode.id, { failed: !selNode.failed || undefined })}
                 onDup={() => duplicate(selNode.id)}
                 onDelete={removeSelected}
               />
             ) : selEdge ? (
-              <>
-                <p className="panel-label">Connection</p>
-                <p className="muted">
-                  {CATALOG[design.nodes.find((n) => n.id === selEdge.from)?.type]?.label} → {CATALOG[design.nodes.find((n) => n.id === selEdge.to)?.type]?.label}
-                  {' · '}{fmtRps(result.edges[selEdge.id] || 0)} req/s
-                </p>
-                <button type="button" className="btn btn--small btn--rust" onClick={removeSelected}>
-                  <Icon name="trash" size={15} /> Delete connection
-                </button>
-              </>
+              <EdgeInspector edge={selEdge} design={design} rps={result.edges[selEdge.id] || 0} allowCustom={allowCustom}
+                onUpdate={(patch) => updateEdge(selEdge.id, patch)} onDelete={removeSelected} />
             ) : (
               <>
                 <p className="panel-label">Chaos test</p>
-                <p className="muted">Kill each component in turn and see what breaks.</p>
-                <button
-                  type="button"
-                  className="btn btn--small"
-                  onClick={() => setChaos({ base: result.errorRate, list: chaosScan(design, traffic, { allowCustom }) })}
-                >
+                <p className="muted">Kill each component in turn and see what breaks. Select a component or connection to configure it.</p>
+                <button type="button" className="btn btn--small" onClick={() => setChaos({ base: result.errorRate, list: chaosScan(design, traffic, { allowCustom }) })}>
                   <Icon name="flame" size={15} /> Run chaos test
                 </button>
                 {chaos && (
@@ -432,15 +467,10 @@ export default function Lab({ challengeId, navigate }) {
                     {chaos.list.length === 0 && <li className="muted">Nothing to kill yet.</li>}
                     {[...chaos.list].sort((a, b) => b.errorRate - a.errorRate).map((c) => {
                       const extra = c.errorRate - chaos.base;
-                      const node = design.nodes.find((n) => n.id === c.id);
                       return (
-                        <li
-                          key={c.id}
-                          className={extra > 0.5 ? 'bad' : extra > 0.05 ? 'warn' : 'good'}
-                          onClick={() => setSelected({ kind: 'node', id: c.id })}
-                        >
+                        <li key={c.id} className={extra > 0.5 ? 'bad' : extra > 0.05 ? 'warn' : 'good'} onClick={() => setSelected({ kind: 'node', id: c.id })}>
                           <Icon name={c.type} size={15} />
-                          <span>{node?.name || CATALOG[c.type].label}</span>
+                          <span>{c.name}</span>
                           <em>
                             {extra > 0.5 && chaos.base <= 0.05 ? 'single point of failure' : `${fmtPct(c.errorRate)} errors`}
                             {c.backlog >= 1 ? ' + backlog' : ''}
@@ -459,6 +489,25 @@ export default function Lab({ challengeId, navigate }) {
   );
 }
 
+// drop undefined keys so stored designs stay tidy
+function clean(o) {
+  const out = {};
+  for (const [k, v] of Object.entries(o)) if (v !== undefined) out[k] = v;
+  return out;
+}
+
+function TrafficChips({ traffic: t }) {
+  return (
+    <div className="traffic-fixed">
+      <span><b>{t.rps.toLocaleString()}</b> req/s</span>
+      <span><b>{Math.round(t.readRatio * 100)}%</b> reads</span>
+      <span><b>{Math.round((1 - t.readRatio) * 100)}%</b> writes</span>
+      {t.mediaShare > 0 && <span><b>{Math.round(t.mediaShare * 100)}%</b> of reads are files</span>}
+      {t.botShare > 0 && <span><b>+{Math.round(t.botShare * 100)}%</b> bot traffic</span>}
+    </div>
+  );
+}
+
 function nearestStep(rps) {
   let best = 0;
   RPS_STEPS.forEach((s, i) => {
@@ -473,134 +522,6 @@ function Metric({ label, value, tone = '' }) {
       <span>{label}</span>
       <b>{value}</b>
     </div>
-  );
-}
-
-function NodeInspector({ node, stats, allowCustom, onUpdate, onSavePreset, onFail, onDup, onDelete }) {
-  const c = CATALOG[node.type];
-  const sized = specOf({ ...node, custom: undefined }); // size defaults, shown as placeholders
-  const custom = node.custom || {};
-  const setCustom = (key, raw) => {
-    const next = { ...custom };
-    if (raw === '') delete next[key];
-    else {
-      const v = Number(raw);
-      if (!Number.isFinite(v) || v < 0) return;
-      next[key] = key === 'hit' ? Math.min(100, v) / 100 : v;
-    }
-    onUpdate({ custom: Object.keys(next).length ? next : undefined });
-  };
-  const fields = [
-    ['capacity', 'Capacity', 'req/s', sized.capacity],
-    ['latency', 'Latency', 'ms', sized.latency],
-    ['cost', 'Cost', '$/mo', sized.cost],
-  ];
-  if (node.type === 'cache' || node.type === 'cdn') fields.push(['hit', 'Hit rate', '%', Math.round(sized.hit * 100)]);
-  const size = node.size || 'M';
-
-  return (
-    <>
-      <p className="panel-label">
-        <Icon name={node.type} size={15} /> {c.label}
-      </p>
-      <p className="muted">{c.blurb}</p>
-
-      {node.type !== 'client' && (
-        <>
-          <label className="field">
-            <span>Name</span>
-            <input
-              type="text"
-              value={node.name || ''}
-              placeholder={c.label}
-              maxLength={24}
-              onChange={(e) => onUpdate({ name: e.target.value || undefined })}
-            />
-          </label>
-
-          {SIZABLE.includes(node.type) && (
-            <div className="field">
-              <span>Size</span>
-              <div className="seg" role="radiogroup" aria-label="Instance size">
-                {Object.entries(SIZES).map(([k, z]) => (
-                  <button
-                    key={k}
-                    type="button"
-                    role="radio"
-                    aria-checked={size === k}
-                    className={size === k ? 'on' : ''}
-                    onClick={() => onUpdate({ size: k === 'M' ? undefined : k })}
-                    title={`${z.label}: ${z.cap}× capacity for ${z.cost}× the cost`}
-                  >
-                    {k}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <details className="custom" open={allowCustom && hasCustom(node)}>
-            <summary>Custom configuration</summary>
-            {allowCustom ? (
-              <>
-                <div className="custom-grid">
-                  {fields.map(([key, label, unit, placeholder]) => (
-                    <label key={key} className="field">
-                      <span>
-                        {label} <small>{unit}</small>
-                      </span>
-                      <input
-                        type="number"
-                        min="0"
-                        step={key === 'latency' ? '0.5' : '1'}
-                        inputMode="decimal"
-                        placeholder={String(placeholder)}
-                        value={custom[key] == null ? '' : key === 'hit' ? Math.round(custom[key] * 100) : custom[key]}
-                        onChange={(e) => setCustom(key, e.target.value)}
-                      />
-                    </label>
-                  ))}
-                </div>
-                <p className="field-note">Empty fields use the {SIZES[size].label.toLowerCase()} default shown in grey.</p>
-                {hasCustom(node) && (
-                  <button type="button" className="btn btn--small btn--ghost" onClick={() => onUpdate({ custom: undefined })}>
-                    <Icon name="reset" size={14} /> Reset to defaults
-                  </button>
-                )}
-              </>
-            ) : (
-              <p className="field-note">Challenges use fixed real-world specs, so only sizes apply here. Set custom numbers in the Design Lab.</p>
-            )}
-          </details>
-        </>
-      )}
-
-      {node.type !== 'client' && stats && (
-        <dl className="stats">
-          <div><dt>Load</dt><dd>{fmtRps(stats.load)} / {fmtRps(stats.capacity)} rps</dd></div>
-          <div><dt>Busy</dt><dd className={stats.util > 1 ? 'bad' : stats.util > 0.85 ? 'warn' : ''}>{Math.round(stats.util * 100)}%</dd></div>
-          <div><dt>Latency</dt><dd>{stats.latency.toFixed(1)} ms</dd></div>
-          <div><dt>Dropping</dt><dd className={stats.dropped > 0 ? 'bad' : ''}>{fmtPct(stats.dropped)}</dd></div>
-          <div><dt>Cost</dt><dd>${specOf(node, allowCustom).cost}/mo</dd></div>
-        </dl>
-      )}
-      <div className="row">
-        {node.type !== 'client' && (
-          <button type="button" className={`btn btn--small ${node.failed ? '' : 'btn--rust'}`} onClick={onFail}>
-            <Icon name={node.failed ? 'reset' : 'flame'} size={15} /> {node.failed ? 'Bring back' : 'Kill it'}
-          </button>
-        )}
-        <button type="button" className="btn btn--small btn--ghost" onClick={onDup}>Duplicate</button>
-        {node.type !== 'client' && (
-          <button type="button" className="btn btn--small btn--ghost" onClick={onSavePreset}>
-            Save to My components
-          </button>
-        )}
-        <button type="button" className="btn btn--small btn--ghost" onClick={onDelete} aria-label="Delete component">
-          <Icon name="trash" size={15} />
-        </button>
-      </div>
-    </>
   );
 }
 

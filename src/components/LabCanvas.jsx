@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CATALOG, specOf, hasCustom } from '../sim/catalog.js';
+import { CATALOG, specOf, hasCustom, displayName, findProduct } from '../sim/catalog.js';
 import { fmtRps } from '../sim/simulate.js';
 import Icon from './Icon.jsx';
 
@@ -84,7 +84,11 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
     const p = toCanvas(e);
     setDrag({ id: n.id, dx: p.x - n.x, dy: p.y - n.y, moved: false });
     onSelect({ kind: 'node', id: n.id });
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+    try {
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+    } catch {
+      /* no active pointer (e.g. synthetic events); dragging still works via window listeners */
+    }
   };
 
   // --- wiring from a port
@@ -137,13 +141,16 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
   // --- drop from palette
   const onDrop = (e) => {
     const presetId = e.dataTransfer.getData('text/x-sd-preset');
+    const productId = e.dataTransfer.getData('text/x-sd-product');
     const preset = presetId ? presets.find((x) => x.id === presetId) : null;
-    const type = preset ? preset.type : e.dataTransfer.getData('text/x-sd-type');
+    const product = productId ? findProduct(productId) : null;
+    const type = preset ? preset.type : product ? product.type : e.dataTransfer.getData('text/x-sd-type');
     if (!type || !CATALOG[type]) return;
     e.preventDefault();
     const p = toCanvas(e);
     const node = {
       ...(preset ? presetToNode(preset, allowCustom) : {}),
+      ...(product ? { product: product.id } : {}),
       id: newId('n'),
       type,
       x: Math.max(0, Math.min(CANVAS_W - NW, Math.round((p.x - NW / 2) / 10) * 10)),
@@ -179,10 +186,13 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
             const hot = target && target.util > 0.85;
             const isSel = selected?.kind === 'edge' && selected.id === e.id;
             const busy = design.edges.length > 24;
+            const extraLat = allowCustom && typeof e.latency === 'number' && e.latency > 0 ? e.latency : 0;
+            const weight = allowCustom && typeof e.weight === 'number' && e.weight !== 1 ? e.weight : null;
+            const tags = [`${fmtRps(rps)}/s`, extraLat ? `+${extraLat}ms` : '', weight != null ? `w${weight}` : ''].filter(Boolean).join(' · ');
             const dots = rps > 0 ? (busy ? 1 : Math.min(5, 1 + Math.round(Math.log10(1 + rps) * 0.9))) : 0;
             const width = 2 + (rps / maxEdge) * 4;
             return (
-              <g key={e.id} className={`wire ${bad ? 'wire--bad' : hot ? 'wire--hot' : ''} ${isSel ? 'wire--sel' : ''} ${rps > 0 ? 'wire--live' : ''}`}>
+              <g key={e.id} className={`wire ${bad ? 'wire--bad' : hot ? 'wire--hot' : ''} ${isSel ? 'wire--sel' : ''} ${rps > 0 ? 'wire--live' : ''} ${extraLat ? 'wire--far' : ''}`}>
                 <path id={`p-${e.id}`} d={d} className="wire-line" style={{ strokeWidth: width }} />
                 <path
                   d={d}
@@ -199,7 +209,7 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
                     </animateMotion>
                   </circle>
                 ))}
-                {rps > 0 && (!busy || isSel) && <WireLabel a={a} b={b} text={`${fmtRps(rps)}/s`} />}
+                {(rps > 0 || extraLat || weight != null) && (!busy || isSel || extraLat) && <WireLabel a={a} b={b} text={tags} />}
               </g>
             );
           })}
@@ -212,9 +222,15 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
           const c = CATALOG[n.type];
           const sp = specOf(n, allowCustom);
           const s = result?.nodes?.[n.id];
-          // size letter, plus * when custom numbers are in effect
+          // size letter, instance count, and * when custom numbers are in effect
           const custom = allowCustom && hasCustom(n);
-          const tag = `${n.size && n.size !== 'M' ? n.size : ''}${custom ? '*' : ''}`;
+          const count = sp.instances > 1 ? `×${sp.instances}` : '';
+          const hwTag = allowCustom && n.hw ? `${n.hw.cpu}c·${n.hw.ram}G` : '';
+          const tag = hwTag
+            ? `${hwTag}${count}${n.custom ? '*' : ''}`
+            : `${n.size && n.size !== 'M' ? n.size : ''}${count}${custom ? '*' : ''}`;
+          const name = displayName(n);
+          const product = n.product ? findProduct(n.product) : null;
           const util = s ? s.util : 0;
           const state = s?.failed ? 'failed' : s && s.dropped > 0.001 ? 'over' : util > 0.85 ? 'hot' : '';
           const isSel = selected?.kind === 'node' && selected.id === n.id;
@@ -228,9 +244,12 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
             >
               <div className="cnode-head">
                 <Icon name={n.type} size={18} />
-                <span className="cnode-name" title={n.name || c.label}>{n.name || c.label}</span>
+                <span className="cnode-name" title={product ? `${name} (${c.label})` : name}>{name}</span>
                 {tag && (
-                  <span className="cnode-tag" title={custom ? 'Custom configuration' : `Size ${tag}`}>
+                  <span
+                    className="cnode-tag"
+                    title={hwTag ? `${n.hw.cpu} vCPU, ${n.hw.ram} GB RAM, ${n.hw.disk.toUpperCase()}, ${n.hw.bandwidth} Gbps` : custom ? 'Custom configuration' : count ? `${sp.instances} instances` : `Size ${tag}`}
+                  >
                     {tag}
                   </span>
                 )}
@@ -240,7 +259,11 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
               ) : (
                 <>
                   <div className="cnode-meta">
-                    {s?.failed ? 'DOWN' : `${fmtRps(s?.load || 0)} / ${fmtRps(sp.capacity)} rps`}
+                    {s?.failed
+                      ? 'DOWN'
+                      : s && s.netUtil > s.cpuUtil && s.netUtil > 0.5
+                        ? `network ${Math.round(s.netUtil * 100)}%`
+                        : `${fmtRps(s?.load || 0)} / ${fmtRps(sp.capacity)} rps`}
                   </div>
                   <div className="cnode-bar">
                     <i style={{ width: `${Math.min(100, util * 100)}%` }} />
@@ -292,6 +315,8 @@ export function presetToNode(preset, allowCustom = true) {
   const node = { type: preset.type };
   if (preset.name) node.name = preset.name;
   if (preset.size) node.size = preset.size;
+  if (preset.product) node.product = preset.product;
+  if (allowCustom && preset.hw) node.hw = { ...preset.hw };
   if (allowCustom && preset.custom) node.custom = { ...preset.custom };
   return node;
 }

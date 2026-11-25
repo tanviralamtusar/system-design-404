@@ -60,7 +60,11 @@ export default function Practice() {
           <li>Past ~70% busy, a component slows down. Past 100%, it drops the excess, and those become errors.</li>
           <li>App servers send reads to a cache first (80% hits), then a database. Writes go to a queue if connected, otherwise to the database.</li>
           <li>A database write costs twice a read. Several primary databases behind a server act as shards; a replica takes over if a primary dies.</li>
-          <li>Load balancers, CDNs and Users route around dead components. Everything else keeps sending to them.</li>
+          <li>Load balancers, gateways, CDNs and Users route around dead components. Everything else keeps sending to them.</li>
+          <li>A raw server does everything itself until you connect a database, cache, queue or storage to it; doing it all on one box costs it 1.5× per request.</li>
+          <li>File downloads are big: they use object storage if connected, and eat network bandwidth (500 KB each vs 20 KB for normal requests).</li>
+          <li>Rate limiters block 95% of bot traffic. Queues give each job to one worker; event streams give every event to every consumer.</li>
+          <li>In challenges you can pick real-world products and sizes. Custom hardware and numbers are for the Design Lab.</li>
         </ul>
       </div>
     </div>

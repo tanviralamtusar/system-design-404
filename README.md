@@ -2,13 +2,22 @@
 
 An interactive system design course and practice site.
 
-- **Learn**: 9 lessons, each an animated diagram you step through (← → keys work).
-- **Practice**: 6 challenges with fixed traffic and requirements (latency, errors, budget, survive any failure, no backlog), checked live.
-- **Design Lab**: free sandbox. Drag components, wire them, set traffic up to 50k req/s, kill components, run a chaos test.
-  Select a component to rename it, pick a size (S/M/L/XL), or set custom capacity, latency, cost and hit rate.
-  "Save to My components" adds it to your palette for reuse. Challenges only allow sizes, not custom numbers.
-- **Cheatsheets**: latency numbers, estimation, availability, interview framework.
+- **Learn**: 13 lessons, each an animated diagram you step through (← → keys work), from what limits one machine
+  (CPU, RAM, disk, network) through load balancing, caching, replication, sharding, queues, object storage, CDNs,
+  API gateways and microservices, event streams, rate limiting, and a full URL shortener.
+- **Practice**: 9 challenges with fixed traffic and requirements (latency, errors, budget, survive any failure, no backlog), checked live.
+- **Design Lab**: a free sandbox with 15 component types (raw server, app server, microservice, worker, load balancer,
+  API gateway, rate limiter, CDN, cache, SQL, replica, NoSQL, object storage, queue, event stream) and 44 real-world
+  products (NGINX, Redis, PostgreSQL, Kafka, S3, Cloudflare…). Traffic settings: req/s, peak multiplier, read/write mix,
+  file downloads, bot traffic. Kill components or run a chaos test.
+- **Configuration**: per component, pick a product, a size, or real **hardware** (vCPU, RAM, HDD/SSD/NVMe, disk size,
+  bandwidth). Capacity, latency, cache hit rate, cost and the bottleneck are derived from it. You can also override numbers
+  directly (instances, error rate, write cost, balancing mode), set a connection's network distance and traffic weight,
+  build components from scratch in **Mine → New component**, and export/import designs as JSON.
+  Challenges allow products and sizes only.
+- **Cheatsheets**: latency numbers, estimation, availability, hardware rules of thumb, real-world products, interview framework.
 
+Product and hardware figures are rough, illustrative ballparks, not benchmarks or price quotes.
 Progress, designs and saved components are kept in the browser's localStorage.
 
 ## Run
@@ -16,13 +25,15 @@ Progress, designs and saved components are kept in the browser's localStorage.
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # checks every challenge's reference solution passes, and custom configs
+npm test         # every challenge's solution passes, shortcuts fail, hardware/custom rules hold
 npm run build    # static site in dist/ (deploy to Vercel, Netlify, GitHub Pages…)
 ```
 
 ## Where things live
 
-- `src/sim/catalog.js`: components, sizes, and their default specs
-- `src/sim/simulate.js`: the traffic simulator and challenge checks
+- `src/sim/catalog.js`: components, real-world products, sizes, and the hardware model
+- `src/sim/simulate.js`: the traffic simulator (CPU + network limits) and challenge checks
+- `src/components/Inspector.jsx`: component, hardware, connection settings and the component builder
+- `src/components/Palette.jsx`: Basics / Real world / Mine palette
 - `src/data/lessons.js`: lesson content and diagrams
 - `src/data/challenges.js`: challenges, hints and reference solutions

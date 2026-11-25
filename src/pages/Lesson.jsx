@@ -48,7 +48,7 @@ export default function Lesson({ id, navigate }) {
 
   if (!lesson) return <p className="page">That lesson doesn’t exist. <a href="#/">Back home</a></p>;
 
-  const step = lesson.steps[i];
+  const step = lesson.steps[Math.min(i, last)]; // clamp: i can lag one render behind a lesson change
   const idx = LESSONS.indexOf(lesson);
   const next = LESSONS[idx + 1];
   const prev = LESSONS[idx - 1];

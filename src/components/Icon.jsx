@@ -41,6 +41,67 @@ const P = {
       <path d="M7.5 7h.01M7.5 17h.01M11 7h5M11 17h5" />
     </>
   ),
+  server: (
+    <>
+      <rect x="3.5" y="3" width="17" height="18" rx="2" />
+      <path d="M3.5 9h17M3.5 15h17M7 6h.01M7 12h.01M7 18h.01M11 6h6M11 12h6M11 18h6" />
+    </>
+  ),
+  gateway: (
+    <>
+      <path d="M4 20V9l8-5 8 5v11" />
+      <path d="M9 20v-6h6v6M4 20h16" />
+    </>
+  ),
+  ratelimit: (
+    <>
+      <path d="M12 3l7.5 3v5.5c0 4.5-3.2 8.2-7.5 9.5-4.3-1.3-7.5-5-7.5-9.5V6z" />
+      <path d="M9 12h6" />
+    </>
+  ),
+  service: (
+    <>
+      <rect x="3" y="3" width="7.5" height="7.5" rx="1.5" />
+      <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5" />
+      <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5" />
+      <rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5" />
+    </>
+  ),
+  nosql: (
+    <>
+      <ellipse cx="12" cy="5.5" rx="7.5" ry="2.8" />
+      <path d="M4.5 5.5v13c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-13" />
+      <path d="M9 11.5l2 2-2 2M13 15.5h3" />
+    </>
+  ),
+  blob: (
+    <>
+      <path d="M4 8l8-4.5L20 8v8l-8 4.5L4 16z" />
+      <path d="M4 8l8 4.5L20 8M12 12.5v8" />
+    </>
+  ),
+  stream: (
+    <>
+      <path d="M3 7h12M3 12h18M3 17h12" />
+      <path d="M17 4.5l3 2.5-3 2.5M17 14.5l3 2.5-3 2.5" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="M20 20l-4.4-4.4" />
+    </>
+  ),
+  plus: <path d="M12 5v14M5 12h14" />,
+  edit: <path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4" />,
+  download: <path d="M12 4v11M7 10.5l5 5 5-5M5 20h14" />,
+  upload: <path d="M12 20V9M7 13.5l5-5 5 5M5 4h14" />,
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M3.5 12h17M12 3.5c2.5 2.6 3.6 5.5 3.6 8.5s-1.1 5.9-3.6 8.5c-2.5-2.6-3.6-5.5-3.6-8.5s1.1-5.9 3.6-8.5z" />
+    </>
+  ),
   svc: (
     <>
       <path d="M12 3l7.5 4.3v9.4L12 21l-7.5-4.3V7.3z" />

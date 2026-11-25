@@ -9,6 +9,7 @@ const NH = 64;
 const TONES = {
   client: 'ink', bot: 'rust', dns: 'violet', cdn: 'violet', lb: 'violet', app: 'green', svc: 'violet',
   cache: 'orange', db: 'mint', replica: 'mint', queue: 'orange', worker: 'green', ext: 'ink',
+  server: 'green', gateway: 'violet', ratelimit: 'violet', service: 'green', nosql: 'mint', blob: 'mint', stream: 'orange',
 };
 
 // flow kind → packet class + legend label
