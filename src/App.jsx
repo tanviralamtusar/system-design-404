@@ -83,22 +83,22 @@ export default function App() {
               <a href="#/lab"><Icon name="window" size={16} /> Design Lab</a>
               <a href="#/cheatsheets"><Icon name="sheets" size={16} /> Cheatsheets</a>
             </nav>
-            <p className="panel-label">Lessons</p>
+            <Progress label="Lessons" n={LESSONS.filter((l) => seen[l.id]).length} of={LESSONS.length} />
             <ol className="toc">
               {LESSONS.map((l, i) => (
                 <li key={l.id}>
-                  <a href={`#/learn/${l.id}`} className={section === 'learn' && id === l.id ? 'on' : ''}>
+                  <a href={`#/learn/${l.id}`} className={`${section === 'learn' && id === l.id ? 'on' : ''} ${seen[l.id] ? 'is-done' : ''}`}>
                     <span className="toc-n">{seen[l.id] ? <Icon name="check" size={13} stroke={2.6} /> : String(i + 1).padStart(2, '0')}</span>
                     {l.title}
                   </a>
                 </li>
               ))}
             </ol>
-            <p className="panel-label">Challenges</p>
+            <Progress label="Challenges" n={CHALLENGES.filter((c) => done[c.id]).length} of={CHALLENGES.length} />
             <ol className="toc">
               {CHALLENGES.map((c, i) => (
                 <li key={c.id}>
-                  <a href={`#/practice/${c.id}`}>
+                  <a href={`#/practice/${c.id}`} className={done[c.id] ? 'is-done' : ''}>
                     <span className="toc-n">{done[c.id] ? <Icon name="check" size={13} stroke={2.6} /> : String(i + 1).padStart(2, '0')}</span>
                     {c.title}
                   </a>
@@ -109,6 +109,17 @@ export default function App() {
         )}
         <main className="main">{page}</main>
       </div>
+    </div>
+  );
+}
+
+function Progress({ label, n, of }) {
+  return (
+    <div className="side-progress">
+      <p className="panel-label">
+        {label} <span>{n}/{of}</span>
+      </p>
+      <i><em style={{ width: `${(n / of) * 100}%` }} /></i>
     </div>
   );
 }

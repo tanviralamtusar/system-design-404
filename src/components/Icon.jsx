@@ -93,6 +93,9 @@ const P = {
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
+  minus: <path d="M5 12h14" />,
+  fit: <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />,
+  keyboard: <path d="M3 7h18v10H3zM7 10.5h.01M11 10.5h.01M15 10.5h.01M8 14h8" />,
   edit: <path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4" />,
   download: <path d="M12 4v11M7 10.5l5 5 5-5M5 20h14" />,
   upload: <path d="M12 20V9M7 13.5l5-5 5 5M5 4h14" />,

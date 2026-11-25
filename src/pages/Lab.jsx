@@ -157,7 +157,7 @@ export default function Lab({ challengeId, navigate }) {
 
   const change = useCallback(
     (next, opts = {}) => {
-      if (!opts.transient) history.current = [...history.current.slice(-40), design];
+      if (!opts.transient) history.current = [...history.current.slice(-40), opts.undoTo || design];
       setDesign(next);
       setChaos(null);
     },
@@ -546,6 +546,8 @@ export default function Lab({ challengeId, navigate }) {
               </>
             )}
           </div>
+
+          {!selected && !builder && <Legend />}
         </aside>
       </div>
     </div>
@@ -577,6 +579,30 @@ function nearestStep(rps) {
     if (Math.abs(s - rps) < Math.abs(RPS_STEPS[best] - rps)) best = i;
   });
   return best;
+}
+
+function Legend() {
+  return (
+    <details className="panel legend-panel" open={load('legend-open', true)} onToggle={(e) => save('legend-open', e.currentTarget.open)}>
+      <summary className="panel-label">
+        <Icon name="keyboard" size={14} /> Reading the canvas
+      </summary>
+      <ul className="key">
+        <li><i className="key-sw key-sw--ok" /> Healthy</li>
+        <li><i className="key-sw key-sw--hot" /> Over 85% busy</li>
+        <li><i className="key-sw key-sw--over" /> Overloaded: dropping requests</li>
+        <li><i className="key-sw key-sw--down" /> Down (killed)</li>
+        <li><i className="key-sw key-sw--host" /> Host machine: components share it</li>
+        <li><i className="key-dot" /> Moving dots are live traffic; thicker wires carry more</li>
+      </ul>
+      <ul className="keys">
+        <li><kbd>Drag</kbd> background to pan</li>
+        <li><kbd>Ctrl</kbd> + <kbd>scroll</kbd> to zoom</li>
+        <li><kbd>Del</kbd> remove selected</li>
+        <li><kbd>Ctrl</kbd> + <kbd>Z</kbd> undo</li>
+      </ul>
+    </details>
+  );
 }
 
 function Metric({ label, value, tone = '' }) {

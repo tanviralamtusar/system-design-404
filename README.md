@@ -9,7 +9,8 @@ An interactive system design course and practice site.
 - **Design Lab**: a free sandbox with 15 component types (raw server, app server, microservice, worker, load balancer,
   API gateway, rate limiter, CDN, cache, SQL, replica, NoSQL, object storage, queue, event stream) and 44 real-world
   products (NGINX, Redis, PostgreSQL, Kafka, S3, Cloudflare…). Traffic settings: req/s, peak multiplier, read/write mix,
-  file downloads, bot traffic. Kill components or run a chaos test.
+  file downloads, bot traffic. Kill components or run a chaos test. Zoom (buttons or Ctrl + scroll), fit to screen,
+  and drag the background to pan.
 - **Configuration**: per component, pick a product, a size, or real **hardware** (vCPU, RAM, HDD/SSD/NVMe, disk size,
   bandwidth). Capacity, latency, cache hit rate, cost and the bottleneck are derived from it. You can also override numbers
   directly (instances, error rate, write cost, balancing mode), set a connection's network distance and traffic weight,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CATALOG, specOf, hasCustom, displayName, findProduct, hostSpec } from '../sim/catalog.js';
 import { fmtRps } from '../sim/simulate.js';
 import Icon from './Icon.jsx';
@@ -7,6 +7,9 @@ export const CANVAS_W = 1900;
 export const CANVAS_H = 780;
 const NW = 150;
 const NH = 70;
+const ZMIN = 0.3;
+const ZMAX = 1.6;
+const clampZ = (z) => Math.min(ZMAX, Math.max(ZMIN, Math.round(z * 100) / 100));
 
 let counter = 0;
 export const newId = (p) => `${p}${Date.now().toString(36)}${(counter++).toString(36)}`;
@@ -45,6 +48,10 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
   const [drag, setDrag] = useState(null); // {id, dx, dy, moved}
   const [wire, setWire] = useState(null); // {from, x, y, moved}
   const [pendingFrom, setPendingFrom] = useState(null); // tap-to-connect mode
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState(null); // {x, y, sl, st, moved}
+  const anchor = useRef(null); // keep this content point under the cursor after a zoom
+  const dragStart = useRef(null); // design before a node drag, for undo
 
   const byId = Object.fromEntries(design.nodes.map((n) => [n.id, n]));
   // the canvas grows to fit big designs
@@ -64,8 +71,76 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
 
   const toCanvas = (e) => {
     const r = canvasRef.current.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
+    return { x: (e.clientX - r.left) / zoom, y: (e.clientY - r.top) / zoom };
   };
+
+  // ---- zoom
+  const zoomTo = (z, cx, cy) => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const nz = clampZ(z);
+    const r = wrap.getBoundingClientRect();
+    const px = cx ?? r.width / 2;
+    const py = cy ?? r.height / 2;
+    anchor.current = { px, py, x: (wrap.scrollLeft + px) / zoom, y: (wrap.scrollTop + py) / zoom };
+    setZoom(nz);
+  };
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current;
+    const a = anchor.current;
+    if (!wrap || !a) return;
+    anchor.current = null;
+    if (a.fit) {
+      wrap.scrollLeft = a.fit.x;
+      wrap.scrollTop = a.fit.y;
+    } else {
+      wrap.scrollLeft = a.x * zoom - a.px;
+      wrap.scrollTop = a.y * zoom - a.py;
+    }
+  }, [zoom]);
+
+  const fit = () => {
+    const wrap = wrapRef.current;
+    const pts = design.nodes;
+    if (!wrap || !pts.length) return;
+    const x0 = Math.min(...pts.map((n) => n.x)) - 40;
+    const y0 = Math.min(...pts.map((n) => n.y)) - 50;
+    const x1 = Math.max(...pts.map((n) => n.x + NW)) + 40;
+    const y1 = Math.max(...pts.map((n) => n.y + NH)) + 40;
+    const nz = clampZ(Math.min(1, wrap.clientWidth / (x1 - x0), wrap.clientHeight / (y1 - y0)));
+    anchor.current = { fit: { x: Math.max(0, x0 * nz), y: Math.max(0, y0 * nz) } };
+    if (nz === zoom) {
+      wrap.scrollLeft = anchor.current.fit.x;
+      wrap.scrollTop = anchor.current.fit.y;
+      anchor.current = null;
+    } else setZoom(nz);
+  };
+
+  // fit on first load, and whenever a whole design is swapped in (template, import, solution)
+  const lastCount = useRef(-1);
+  useEffect(() => {
+    const prev = lastCount.current;
+    lastCount.current = design.nodes.length;
+    if (prev === -1 || Math.abs(design.nodes.length - prev) > 2) {
+      const wrap = wrapRef.current;
+      const needs = wrap && design.nodes.some((n) => (n.x + NW) * zoom > wrap.clientWidth || (n.y + NH) * zoom > wrap.clientHeight);
+      if (needs || zoom !== 1) fit();
+    }
+  }, [design.nodes.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Ctrl/⌘ + wheel (or a trackpad pinch) zooms around the cursor
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const onWheel = (e) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const r = wrap.getBoundingClientRect();
+      zoomTo(zoom * Math.exp(-e.deltaY * 0.0025), e.clientX - r.left, e.clientY - r.top);
+    };
+    wrap.addEventListener('wheel', onWheel, { passive: false });
+    return () => wrap.removeEventListener('wheel', onWheel);
+  });
 
   const connect = (from, to) => {
     const why = canConnect(design, from, to);
@@ -86,6 +161,7 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
       return;
     }
     const p = toCanvas(e);
+    dragStart.current = { design, moved: false };
     setDrag({ id: n.id, dx: p.x - n.x, dy: p.y - n.y, moved: false });
     onSelect({ kind: 'node', id: n.id });
     try {
@@ -104,8 +180,17 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
   };
 
   useEffect(() => {
-    if (!drag && !wire) return;
+    if (!drag && !wire && !pan) return;
     const move = (e) => {
+      if (pan) {
+        const dx = e.clientX - pan.x;
+        const dy = e.clientY - pan.y;
+        if (!pan.moved && Math.abs(dx) + Math.abs(dy) < 4) return;
+        wrapRef.current.scrollLeft = pan.sl - dx;
+        wrapRef.current.scrollTop = pan.st - dy;
+        if (!pan.moved) setPan({ ...pan, moved: true });
+        return;
+      }
       const p = toCanvas(e);
       if (drag) {
         const x = Math.max(0, Math.min(6000, Math.round((p.x - drag.dx) / 10) * 10));
@@ -113,14 +198,22 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
         const n = byId[drag.id];
         if (n && (n.x !== x || n.y !== y)) {
           onChange({ ...design, nodes: design.nodes.map((m) => (m.id === drag.id ? { ...m, x, y } : m)) }, { transient: true });
-          if (!drag.moved) setDrag({ ...drag, moved: true });
+          dragStart.current.moved = true;
         }
       }
       if (wire) setWire({ ...wire, x: p.x, y: p.y, moved: true });
     };
     const up = (e) => {
+      if (pan) {
+        if (!pan.moved) {
+          onSelect(null);
+          setPendingFrom(null);
+        }
+        setPan(null);
+        return;
+      }
       if (drag) {
-        if (drag.moved) onChange(design); // commit the final position
+        if (dragStart.current?.moved) onChange(design, { undoTo: dragStart.current.design }); // commit; undo returns to where the drag began
         setDrag(null);
       }
       if (wire) {
@@ -167,17 +260,23 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
   const maxEdge = Math.max(1, ...Object.values(result?.edges || {}));
 
   return (
+    <div className="canvas-shell">
     <div
-      className="canvas-wrap"
+      className={`canvas-wrap ${pan?.moved ? 'canvas-wrap--panning' : ''}`}
       ref={wrapRef}
       onDragOver={(e) => e.preventDefault()}
       onDrop={onDrop}
-      onPointerDown={() => {
-        onSelect(null);
-        setPendingFrom(null);
+      onPointerDown={(e) => {
+        if (e.button !== 0 && e.button !== 1) return;
+        const w = wrapRef.current;
+        const r = w.getBoundingClientRect();
+        if (e.clientX - r.left >= w.clientWidth || e.clientY - r.top >= w.clientHeight) return; // on a scrollbar
+        // drag the background to pan; a plain click clears the selection
+        setPan({ x: e.clientX, y: e.clientY, sl: wrapRef.current.scrollLeft, st: wrapRef.current.scrollTop, moved: false });
       }}
     >
-      <div className="canvas" ref={canvasRef} style={{ width: W, height: H }}>
+      <div className="canvas-sizer" style={{ width: W * zoom, height: H * zoom }}>
+      <div className="canvas" ref={canvasRef} style={{ width: W, height: H, transform: zoom === 1 ? undefined : `scale(${zoom})` }}>
         {hosts.map((h) => {
           const inside = design.nodes.filter((n) => n.host === h.id && n.type !== 'client');
           if (!inside.length) return null;
@@ -324,6 +423,20 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
             <p>Select something and press Delete to remove it.</p>
           </div>
         )}
+      </div>
+      </div>
+    </div>
+      <div className="canvas-tools" role="toolbar" aria-label="Zoom">
+        <button type="button" onClick={() => zoomTo(zoom / 1.2)} disabled={zoom <= ZMIN} aria-label="Zoom out" title="Zoom out (Ctrl + scroll)">
+          <Icon name="minus" size={15} stroke={2.2} />
+        </button>
+        <button type="button" className="canvas-zoom" onClick={() => zoomTo(1)} title="Reset to 100%">{Math.round(zoom * 100)}%</button>
+        <button type="button" onClick={() => zoomTo(zoom * 1.2)} disabled={zoom >= ZMAX} aria-label="Zoom in" title="Zoom in (Ctrl + scroll)">
+          <Icon name="plus" size={15} stroke={2.2} />
+        </button>
+        <button type="button" onClick={fit} aria-label="Fit everything on screen" title="Fit everything on screen">
+          <Icon name="fit" size={15} stroke={2} />
+        </button>
       </div>
     </div>
   );
