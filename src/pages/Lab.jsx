@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import LabCanvas, { newId } from '../components/LabCanvas.jsx';
+import LabCanvas, { newId, presetToNode } from '../components/LabCanvas.jsx';
 import Icon from '../components/Icon.jsx';
-import { CATALOG, PALETTE_ORDER } from '../sim/catalog.js';
+import { CATALOG, PALETTE_ORDER, SIZES, SIZABLE, specOf, hasCustom } from '../sim/catalog.js';
 import { simulate, evaluate, chaosScan, fmtPct, fmtRps } from '../sim/simulate.js';
 import { CHALLENGES, findChallenge, build } from '../data/challenges.js';
 import { load, save } from '../store.js';
@@ -44,6 +44,12 @@ export default function Lab({ challengeId, navigate }) {
   const [solutionAsk, setSolutionAsk] = useState(false);
   const [chaos, setChaos] = useState(null);
   const [done, setDone] = useState(() => load('done', {}));
+  const [presets, setPresets] = useState(() => load('presets', []));
+  const allowCustom = !challenge;
+  const savePresets = (list) => {
+    setPresets(list);
+    save('presets', list);
+  };
   const history = useRef([]);
   const toastTimer = useRef();
 
@@ -86,7 +92,7 @@ export default function Lab({ challengeId, navigate }) {
     }
   };
 
-  const result = useMemo(() => simulate(design, traffic), [design, traffic]);
+  const result = useMemo(() => simulate(design, traffic, { allowCustom }), [design, traffic, allowCustom]);
   const checks = useMemo(() => (challenge ? evaluate(challenge, design, result) : null), [challenge, design, result]);
   const passed = checks?.every((c) => c.ok);
 
@@ -98,15 +104,30 @@ export default function Lab({ challengeId, navigate }) {
     }
   }, [passed, challenge, done]);
 
-  const addNode = (type) => {
+  const addNode = (type, preset) => {
     // place it in the first free slot of its natural column
     const col = { client: 0, cdn: 1, lb: 1, app: 2, cache: 3, queue: 3, worker: 4, db: 4, replica: 4 }[type] ?? 2;
     const x = 40 + col * 190;
     let y = 40;
     while (design.nodes.some((n) => Math.abs(n.x - x) < 150 && Math.abs(n.y - y) < 80) && y < 680) y += 90;
-    const node = { id: newId('n'), type, x, y };
+    const node = { ...(preset ? presetToNode(preset, allowCustom) : {}), id: newId('n'), type, x, y };
     change({ ...design, nodes: [...design.nodes, node] });
     setSelected({ kind: 'node', id: node.id });
+  };
+
+  const updateNode = (id, patch) =>
+    change({ ...design, nodes: design.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)) });
+
+  const saveAsPreset = (node) => {
+    const preset = {
+      id: newId('p'),
+      type: node.type,
+      name: node.name || `${SIZES[node.size || 'M'].label} ${CATALOG[node.type].label.toLowerCase()}`,
+      size: node.size || 'M',
+      custom: hasCustom(node) ? { ...node.custom } : undefined,
+    };
+    savePresets([...presets, preset]);
+    showToast(`Saved “${preset.name}” to My components`);
   };
 
   const removeSelected = useCallback(() => {
@@ -221,6 +242,43 @@ export default function Lab({ challengeId, navigate }) {
               </button>
             );
           })}
+          <p className="panel-label pal-mine">My components</p>
+          {presets.length === 0 && (
+            <p className="pal-empty">Select a component, set its size or specs, then “Save to My components”.</p>
+          )}
+          {presets.map((pr) => {
+            const c = CATALOG[pr.type];
+            const sp = specOf(presetToNode(pr), allowCustom);
+            const locked = !allowCustom && pr.custom;
+            return (
+              <div key={pr.id} className="pal-mine-row">
+                <button
+                  type="button"
+                  className={`pal-item tone-${c.tone}`}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('text/x-sd-preset', pr.id);
+                    e.dataTransfer.effectAllowed = 'copy';
+                  }}
+                  onClick={() => addNode(pr.type, pr)}
+                  title={`${c.label} · ${fmtRps(sp.capacity)} rps · ${sp.latency} ms · $${sp.cost}/mo${locked ? ' (custom numbers are ignored in challenges; size still applies)' : ''}`}
+                >
+                  <Icon name={pr.type} size={18} />
+                  <span className="pal-name">{pr.name}</span>
+                  <span className="pal-cost">${sp.cost}</span>
+                </button>
+                <button
+                  type="button"
+                  className="pal-del"
+                  aria-label={`Remove ${pr.name} from My components`}
+                  title="Remove"
+                  onClick={() => savePresets(presets.filter((x) => x.id !== pr.id))}
+                >
+                  <Icon name="x" size={13} stroke={2.4} />
+                </button>
+              </div>
+            );
+          })}
         </aside>
 
         <section className="stage">
@@ -232,7 +290,7 @@ export default function Lab({ challengeId, navigate }) {
             <Metric label="Cost / mo" value={`$${result.cost.toLocaleString()}`} tone={challenge?.targets.maxCost && result.cost > challenge.targets.maxCost ? 'bad' : ''} />
             <Metric label="Backlog" value={result.backlog < 1 ? 'none' : `+${fmtRps(result.backlog)}/s`} tone={result.backlog >= 1 ? 'warn' : ''} />
           </div>
-          <LabCanvas design={design} onChange={change} result={result} selected={selected} onSelect={setSelected} onToast={showToast} />
+          <LabCanvas design={design} onChange={change} result={result} selected={selected} onSelect={setSelected} onToast={showToast} presets={presets} allowCustom={allowCustom} />
           {reasons.length > 0 && (
             <div className="why">
               <Icon name="alert" size={16} />
@@ -334,6 +392,9 @@ export default function Lab({ challengeId, navigate }) {
               <NodeInspector
                 node={selNode}
                 stats={result.nodes[selNode.id]}
+                allowCustom={allowCustom}
+                onUpdate={(patch) => updateNode(selNode.id, patch)}
+                onSavePreset={() => saveAsPreset(selNode)}
                 onFail={() => toggleFail(selNode.id)}
                 onDup={() => duplicate(selNode.id)}
                 onDelete={removeSelected}
@@ -353,23 +414,40 @@ export default function Lab({ challengeId, navigate }) {
               <>
                 <p className="panel-label">Chaos test</p>
                 <p className="muted">Kill each component in turn and see what breaks.</p>
-                <button type="button" className="btn btn--small" onClick={() => setChaos(chaosScan(design, traffic))}>
+                <button
+                  type="button"
+                  className="btn btn--small"
+                  onClick={() => setChaos({ base: result.errorRate, list: chaosScan(design, traffic, { allowCustom }) })}
+                >
                   <Icon name="flame" size={15} /> Run chaos test
                 </button>
                 {chaos && (
                   <ul className="chaos">
-                    {chaos.length === 0 && <li className="muted">Nothing to kill yet.</li>}
-                    {[...chaos].sort((a, b) => b.errorRate - a.errorRate).map((c) => (
-                      <li
-                        key={c.id}
-                        className={c.errorRate > 0.5 ? 'bad' : c.errorRate > 0.05 ? 'warn' : 'good'}
-                        onClick={() => setSelected({ kind: 'node', id: c.id })}
-                      >
-                        <Icon name={c.type} size={15} />
-                        <span>{CATALOG[c.type].label}</span>
-                        <em>{c.errorRate > 0.5 ? 'single point of failure' : `${fmtPct(c.errorRate)} errors`}{c.backlog >= 1 ? ' + backlog' : ''}</em>
+                    {chaos.base > 0.05 && (
+                      <li className="warn">
+                        <Icon name="alert" size={15} />
+                        <span>Already failing {fmtPct(chaos.base)} with nothing killed. Fix capacity first.</span>
                       </li>
-                    ))}
+                    )}
+                    {chaos.list.length === 0 && <li className="muted">Nothing to kill yet.</li>}
+                    {[...chaos.list].sort((a, b) => b.errorRate - a.errorRate).map((c) => {
+                      const extra = c.errorRate - chaos.base;
+                      const node = design.nodes.find((n) => n.id === c.id);
+                      return (
+                        <li
+                          key={c.id}
+                          className={extra > 0.5 ? 'bad' : extra > 0.05 ? 'warn' : 'good'}
+                          onClick={() => setSelected({ kind: 'node', id: c.id })}
+                        >
+                          <Icon name={c.type} size={15} />
+                          <span>{node?.name || CATALOG[c.type].label}</span>
+                          <em>
+                            {extra > 0.5 && chaos.base <= 0.05 ? 'single point of failure' : `${fmtPct(c.errorRate)} errors`}
+                            {c.backlog >= 1 ? ' + backlog' : ''}
+                          </em>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </>
@@ -398,21 +476,112 @@ function Metric({ label, value, tone = '' }) {
   );
 }
 
-function NodeInspector({ node, stats, onFail, onDup, onDelete }) {
+function NodeInspector({ node, stats, allowCustom, onUpdate, onSavePreset, onFail, onDup, onDelete }) {
   const c = CATALOG[node.type];
+  const sized = specOf({ ...node, custom: undefined }); // size defaults, shown as placeholders
+  const custom = node.custom || {};
+  const setCustom = (key, raw) => {
+    const next = { ...custom };
+    if (raw === '') delete next[key];
+    else {
+      const v = Number(raw);
+      if (!Number.isFinite(v) || v < 0) return;
+      next[key] = key === 'hit' ? Math.min(100, v) / 100 : v;
+    }
+    onUpdate({ custom: Object.keys(next).length ? next : undefined });
+  };
+  const fields = [
+    ['capacity', 'Capacity', 'req/s', sized.capacity],
+    ['latency', 'Latency', 'ms', sized.latency],
+    ['cost', 'Cost', '$/mo', sized.cost],
+  ];
+  if (node.type === 'cache' || node.type === 'cdn') fields.push(['hit', 'Hit rate', '%', Math.round(sized.hit * 100)]);
+  const size = node.size || 'M';
+
   return (
     <>
       <p className="panel-label">
         <Icon name={node.type} size={15} /> {c.label}
       </p>
       <p className="muted">{c.blurb}</p>
+
+      {node.type !== 'client' && (
+        <>
+          <label className="field">
+            <span>Name</span>
+            <input
+              type="text"
+              value={node.name || ''}
+              placeholder={c.label}
+              maxLength={24}
+              onChange={(e) => onUpdate({ name: e.target.value || undefined })}
+            />
+          </label>
+
+          {SIZABLE.includes(node.type) && (
+            <div className="field">
+              <span>Size</span>
+              <div className="seg" role="radiogroup" aria-label="Instance size">
+                {Object.entries(SIZES).map(([k, z]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    role="radio"
+                    aria-checked={size === k}
+                    className={size === k ? 'on' : ''}
+                    onClick={() => onUpdate({ size: k === 'M' ? undefined : k })}
+                    title={`${z.label}: ${z.cap}× capacity for ${z.cost}× the cost`}
+                  >
+                    {k}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <details className="custom" open={allowCustom && hasCustom(node)}>
+            <summary>Custom configuration</summary>
+            {allowCustom ? (
+              <>
+                <div className="custom-grid">
+                  {fields.map(([key, label, unit, placeholder]) => (
+                    <label key={key} className="field">
+                      <span>
+                        {label} <small>{unit}</small>
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step={key === 'latency' ? '0.5' : '1'}
+                        inputMode="decimal"
+                        placeholder={String(placeholder)}
+                        value={custom[key] == null ? '' : key === 'hit' ? Math.round(custom[key] * 100) : custom[key]}
+                        onChange={(e) => setCustom(key, e.target.value)}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <p className="field-note">Empty fields use the {SIZES[size].label.toLowerCase()} default shown in grey.</p>
+                {hasCustom(node) && (
+                  <button type="button" className="btn btn--small btn--ghost" onClick={() => onUpdate({ custom: undefined })}>
+                    <Icon name="reset" size={14} /> Reset to defaults
+                  </button>
+                )}
+              </>
+            ) : (
+              <p className="field-note">Challenges use fixed real-world specs, so only sizes apply here. Set custom numbers in the Design Lab.</p>
+            )}
+          </details>
+        </>
+      )}
+
       {node.type !== 'client' && stats && (
         <dl className="stats">
-          <div><dt>Load</dt><dd>{fmtRps(stats.load)} / {fmtRps(c.capacity)} rps</dd></div>
+          <div><dt>Load</dt><dd>{fmtRps(stats.load)} / {fmtRps(stats.capacity)} rps</dd></div>
           <div><dt>Busy</dt><dd className={stats.util > 1 ? 'bad' : stats.util > 0.85 ? 'warn' : ''}>{Math.round(stats.util * 100)}%</dd></div>
           <div><dt>Latency</dt><dd>{stats.latency.toFixed(1)} ms</dd></div>
           <div><dt>Dropping</dt><dd className={stats.dropped > 0 ? 'bad' : ''}>{fmtPct(stats.dropped)}</dd></div>
-          <div><dt>Cost</dt><dd>${c.cost}/mo</dd></div>
+          <div><dt>Cost</dt><dd>${specOf(node, allowCustom).cost}/mo</dd></div>
         </dl>
       )}
       <div className="row">
@@ -422,6 +591,11 @@ function NodeInspector({ node, stats, onFail, onDup, onDelete }) {
           </button>
         )}
         <button type="button" className="btn btn--small btn--ghost" onClick={onDup}>Duplicate</button>
+        {node.type !== 'client' && (
+          <button type="button" className="btn btn--small btn--ghost" onClick={onSavePreset}>
+            Save to My components
+          </button>
+        )}
         <button type="button" className="btn btn--small btn--ghost" onClick={onDelete} aria-label="Delete component">
           <Icon name="trash" size={15} />
         </button>

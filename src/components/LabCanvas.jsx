@@ -212,7 +212,9 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
           const c = CATALOG[n.type];
           const sp = specOf(n, allowCustom);
           const s = result?.nodes?.[n.id];
-          const tag = allowCustom && hasCustom(n) ? 'custom' : n.size && n.size !== 'M' ? n.size : '';
+          // size letter, plus * when custom numbers are in effect
+          const custom = allowCustom && hasCustom(n);
+          const tag = `${n.size && n.size !== 'M' ? n.size : ''}${custom ? '*' : ''}`;
           const util = s ? s.util : 0;
           const state = s?.failed ? 'failed' : s && s.dropped > 0.001 ? 'over' : util > 0.85 ? 'hot' : '';
           const isSel = selected?.kind === 'node' && selected.id === n.id;
@@ -227,7 +229,11 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
               <div className="cnode-head">
                 <Icon name={n.type} size={18} />
                 <span className="cnode-name" title={n.name || c.label}>{n.name || c.label}</span>
-                {tag && <span className="cnode-tag">{tag}</span>}
+                {tag && (
+                  <span className="cnode-tag" title={custom ? 'Custom configuration' : `Size ${tag}`}>
+                    {tag}
+                  </span>
+                )}
               </div>
               {n.type === 'client' ? (
                 <div className="cnode-meta">traffic source</div>
