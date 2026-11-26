@@ -8,6 +8,7 @@ import { simulate, evaluate, chaosScan, normTraffic, fmtPct, fmtRps } from '../s
 import { CHALLENGES, findChallenge, build } from '../data/challenges.js';
 import { load, save } from '../store.js';
 import { memoryUse, fmtMem } from '../sim/memory.js';
+import { makeTradeonDesign, makeTradeonSelfHostedDesign, TRADEON_TRAFFIC } from '../sim/tradeonFlow.js';
 import ProductScenario from '../components/ProductScenario.jsx';
 import { PRODUCT_SCENARIO_ID, makeProductDesign, normalizeProductScenario, projectProductUsage, upgradeProductDesign } from '../sim/productScenario.js';
 
@@ -17,6 +18,8 @@ const DEFAULT_TRAFFIC = { rps: 1000, readRatio: 0.9, mediaShare: 0, botShare: 0,
 const TEMPLATES = {
   empty: { label: 'Empty canvas', make: starter },
   products: { label: 'Tradeon · shared SQL product cache', make: makeProductDesign },
+  tradeon: { label: 'Tradeon · real production flow (Coolify + Supabase + TMAPI)', make: makeTradeonDesign, traffic: TRADEON_TRAFFIC },
+  tradeonLean: { label: 'Tradeon · without Supabase (Traefik + 2 Node APIs + Postgres)', make: makeTradeonSelfHostedDesign, traffic: TRADEON_TRAFFIC },
   layers: { label: 'Frontend → API → Backend → DB', make: () => build([['u:client'], ['f:frontend'], ['a:api'], ['b:backend'], ['d:db']], [['u', 'f'], ['f', 'a'], ['a', 'b'], ['b', 'd']]) },
   monolith: { label: 'One raw server', make: () => build([['u:client'], ['s:server']], [['u', 's']]) },
   single: { label: 'App + database', make: () => build([['u:client'], ['a:app'], ['d:db']], [['u', 'a'], ['a', 'd']]) },
@@ -355,7 +358,9 @@ export default function Lab({ challengeId, scenarioId, navigate }) {
           {!challenge && (
             <select className="select" value="" aria-label="Load a template" onChange={(e) => {
               if (e.target.value) {
-                change(TEMPLATES[e.target.value].make());
+                const tp = TEMPLATES[e.target.value];
+                change(tp.make());
+                if (tp.traffic) setTraffic(normTraffic(tp.traffic));
                 setSelected(null);
               }
             }}>
