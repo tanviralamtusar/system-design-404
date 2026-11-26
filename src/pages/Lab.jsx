@@ -7,6 +7,7 @@ import { CATALOG, SIZES, displayName, findProduct, DEFAULT_HOST } from '../sim/c
 import { simulate, evaluate, chaosScan, normTraffic, fmtPct, fmtRps } from '../sim/simulate.js';
 import { CHALLENGES, findChallenge, build } from '../data/challenges.js';
 import { load, save } from '../store.js';
+import { memoryUse, fmtMem } from '../sim/memory.js';
 import ProductScenario from '../components/ProductScenario.jsx';
 import { PRODUCT_SCENARIO_ID, makeProductDesign, normalizeProductScenario, projectProductUsage, upgradeProductDesign } from '../sim/productScenario.js';
 
@@ -95,7 +96,7 @@ function sanitizeDesign(raw) {
     .filter((h) => h && typeof h.id === 'string')
     .slice(0, 50)
     .map((h) => {
-      const host = { id: str(h.id, 60), name: str(h.name, 32) || 'VPS', ...nums(h, ['cpu', 'ram', 'diskGB', 'bandwidth', 'reserved', 'cost']) };
+      const host = { id: str(h.id, 60), name: str(h.name, 32) || 'VPS', ...nums(h, ['cpu', 'ram', 'diskGB', 'bandwidth', 'reserved', 'reservedRam', 'cost']) };
       host.disk = ['hdd', 'ssd', 'nvme'].includes(h.disk) ? h.disk : 'ssd';
       if (h.failed === true) host.failed = true;
       return host;
@@ -182,6 +183,9 @@ export default function Lab({ challengeId, scenarioId, navigate }) {
   const scenarioUsage = scenario ? projectProductUsage(scenario) : null;
   const effectiveTraffic = scenario ? { ...traffic, rps: scenarioUsage.rps, readRatio: 1, mediaShare: 0, botShare: 0 } : traffic;
   const result = useMemo(() => simulate(design, effectiveTraffic, { allowCustom }), [design, traffic, allowCustom]);
+  const [view, setViewState] = useState(() => load('lab-view', 'load'));
+  const setView = (v) => { setViewState(v); save('lab-view', v); };
+  const memory = useMemo(() => memoryUse(design, result, allowCustom), [design, result, allowCustom]);
   const updateScenario = (patch) => {
     const next = normalizeProductScenario({ ...scenario, ...patch });
     change({ ...design, scenario: next, edges: design.edges.map((e) => e.id === 'products-route-one' ? { ...e, weight: next.siteOne } : e.id === 'products-route-two' ? { ...e, weight: next.siteTwo } : e) });
@@ -404,12 +408,13 @@ export default function Lab({ challengeId, scenarioId, navigate }) {
             <Metric label="p50" value={result.served ? `${Math.round(result.p50)} ms` : '—'} />
             <Metric label="p95" value={result.served ? `${Math.round(result.p95)} ms` : '—'} tone={result.p95 > (challenge?.targets.maxP95 ?? 200) ? 'warn' : ''} />
             <Metric label="Cost / mo" value={`$${result.cost.toLocaleString()}`} tone={challenge?.targets.maxCost && result.cost > challenge.targets.maxCost ? 'bad' : ''} />
+            {view === 'ram' && <Metric label="RAM in use" value={fmtMem(memory.totalGB)} tone={Object.values(memory.hosts).some((h) => h.util > 1) ? 'bad' : Object.values(memory.hosts).some((h) => h.util > 0.85) ? 'warn' : ''} />}
             <Metric label="Backlog" value={result.backlog < 1 ? 'none' : `+${fmtRps(result.backlog)}/s`} tone={result.backlog >= 1 ? 'warn' : ''} />
             {result.bots.total > 0 && (
               <Metric label="Bots blocked" value={fmtPct(result.bots.blocked / result.bots.total)} tone={result.bots.blocked / result.bots.total > 0.5 ? 'good' : 'warn'} />
             )}
           </div>
-          <LabCanvas design={design} onChange={change} result={result} selected={selected} onSelect={setSelected} onToast={showToast} presets={presets} allowCustom={allowCustom} />
+          <LabCanvas design={design} onChange={change} result={result} selected={selected} onSelect={setSelected} onToast={showToast} presets={presets} allowCustom={allowCustom} view={view} memory={memory} onView={setView} />
           {reasons.length > 0 && (
             <div className="why">
               <Icon name="alert" size={16} />
@@ -500,6 +505,8 @@ export default function Lab({ challengeId, scenarioId, navigate }) {
               </label>
             </div>
           )}
+
+          {view === 'ram' && <MemoryPanel design={design} memory={memory} onSelect={(id) => setSelected({ kind: 'node', id })} />}
 
           <div className="panel">
             {builder ? (
@@ -620,6 +627,32 @@ function Legend() {
         <li><kbd>Ctrl</kbd> + <kbd>Z</kbd> undo</li>
       </ul>
     </details>
+  );
+}
+
+function MemoryPanel({ design, memory, onSelect }) {
+  const rows = design.nodes.filter((n) => memory.nodes[n.id]).map((n) => ({ n, m: memory.nodes[n.id] })).sort((a, b) => b.m.usedGB - a.m.usedGB);
+  const max = Math.max(0.01, ...rows.map((r) => r.m.usedGB));
+  return (
+    <div className="panel mem-panel">
+      <p className="panel-label">Memory by service</p>
+      {Object.entries(memory.hosts).map(([id, h]) => (
+        <p key={id} className={`mem-host ${h.util > 1 ? 'mem-host--over' : h.util > 0.85 ? 'mem-host--hot' : ''}`}>
+          <b>{design.hosts?.find((x) => x.id === id)?.name || 'Host'}</b>: {fmtMem(h.usedGB)} of {h.totalGB} GB ({Math.round(h.util * 100)}%)
+          {h.util > 1 && ' · out of memory: the OS would start killing processes'}
+        </p>
+      ))}
+      <ul className="mem-list">
+        {rows.map(({ n, m }) => (
+          <li key={n.id} onClick={() => onSelect(n.id)} title={m.parts.map(([l, g]) => `${l}: ${fmtMem(g)}`).join(' · ')}>
+            <span className="mem-name">{displayName(n)}</span>
+            <em>{fmtMem(m.usedGB)}</em>
+            <i><b className={m.util > 1 ? 'over' : m.util > 0.85 ? 'hot' : ''} style={{ width: `${(m.usedGB / max) * 100}%` }} /></i>
+          </li>
+        ))}
+      </ul>
+      <p className="field-note">Estimates: idle runtime + in-flight requests (rps × latency) + buffer cache for databases. Hover a row for the split. Hosted services share the machine's RAM; the rest is checked against their own size.</p>
+    </div>
   );
 }
 

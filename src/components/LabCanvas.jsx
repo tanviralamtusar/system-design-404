@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CATALOG, specOf, hasCustom, displayName, findProduct, hostSpec } from '../sim/catalog.js';
 import { fmtRps } from '../sim/simulate.js';
+import { fmtMem } from '../sim/memory.js';
 import Icon from './Icon.jsx';
 
 export const CANVAS_W = 1900;
@@ -42,7 +43,7 @@ function edgePath(a, b) {
   return `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
 }
 
-export default function LabCanvas({ design, onChange, result, selected, onSelect, onToast, presets = [], allowCustom = true }) {
+export default function LabCanvas({ design, onChange, result, selected, onSelect, onToast, presets = [], allowCustom = true, view = 'load', memory = null, onView }) {
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
   const [drag, setDrag] = useState(null); // {id, dx, dy, moved}
@@ -296,10 +297,17 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
                 <Icon name="server" size={15} />
                 <b>{hs.name}</b>
                 <span>{hs.cpu} vCPU · {hs.ram} GB · {hs.disk.toUpperCase()}</span>
+                {view === 'ram' && memory?.hosts?.[h.id] ? (
+                  <span className={`host-cpu ${memory.hosts[h.id].util > 1 ? 'host-ram--over' : memory.hosts[h.id].util > 0.85 ? 'host-ram--hot' : ''}`}>
+                    {h.failed ? 'DOWN' : `RAM ${fmtMem(memory.hosts[h.id].usedGB)} / ${hs.ram} GB`}
+                    <i><em style={{ width: `${Math.min(100, memory.hosts[h.id].util * 100)}%` }} /></i>
+                  </span>
+                ) : (
                 <span className="host-cpu">
                   {h.failed ? 'DOWN' : `CPU ${cpu}%`}
                   <i><em style={{ width: `${Math.min(100, cpu)}%` }} /></i>
                 </span>
+                )}
                 <span className="host-cost">${hs.cost.toLocaleString()}/mo</span>
               </button>
             </div>
@@ -362,8 +370,9 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
             : `${n.size && n.size !== 'M' ? n.size : ''}${count}${custom ? '*' : ''}`;
           const name = displayName(n);
           const product = n.product ? findProduct(n.product) : null;
+          const mem = view === 'ram' ? memory?.nodes?.[n.id] : null;
           const util = s ? s.util : 0;
-          const state = s?.failed ? 'failed' : s && s.dropped > 0.001 ? 'over' : util > 0.85 ? 'hot' : '';
+          const state = s?.failed ? 'failed' : view === 'ram' ? (mem?.util > 1 ? 'over' : mem?.util > 0.85 ? 'hot' : '') : s && s.dropped > 0.001 ? 'over' : util > 0.85 ? 'hot' : '';
           const isSel = selected?.kind === 'node' && selected.id === n.id;
           return (
             <div
@@ -392,12 +401,14 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
                   <div className="cnode-meta">
                     {s?.failed
                       ? 'DOWN'
+                      : view === 'ram'
+                        ? mem ? (mem.limitGB ? `${fmtMem(mem.usedGB)} / ${fmtMem(mem.limitGB)} RAM` : `${fmtMem(mem.usedGB)} RAM · ${Math.round(mem.util * 100)}% of host`) : 'managed (no RAM)'
                       : s && s.netUtil > s.cpuUtil && s.netUtil > 0.5
                         ? `network ${Math.round(s.netUtil * 100)}%`
                         : `${fmtRps(s?.load || 0)} / ${fmtRps(sp.capacity)} rps`}
                   </div>
                   <div className="cnode-bar">
-                    <i style={{ width: `${Math.min(100, util * 100)}%` }} />
+                    <i style={{ width: `${Math.min(100, (view === 'ram' ? mem?.util || 0 : util) * 100)}%` }} />
                   </div>
                 </>
               )}
@@ -426,7 +437,13 @@ export default function LabCanvas({ design, onChange, result, selected, onSelect
       </div>
       </div>
     </div>
-      <div className="canvas-tools" role="toolbar" aria-label="Zoom">
+      <div className="canvas-tools" role="toolbar" aria-label="Zoom and view">
+        {onView && (
+          <>
+            <button type="button" className={view === 'load' ? 'is-on' : ''} onClick={() => onView('load')} aria-pressed={view === 'load'} title="Show traffic load on each component">Load</button>
+            <button type="button" className={view === 'ram' ? 'is-on' : ''} onClick={() => onView('ram')} aria-pressed={view === 'ram'} title="Show estimated RAM used by each service">RAM</button>
+          </>
+        )}
         <button type="button" onClick={() => zoomTo(zoom / 1.2)} disabled={zoom <= ZMIN} aria-label="Zoom out" title="Zoom out (Ctrl + scroll)">
           <Icon name="minus" size={15} stroke={2.2} />
         </button>

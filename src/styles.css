@@ -718,3 +718,20 @@ input[type='range'] { cursor: pointer; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }
+
+/* ---------- RAM view ---------- */
+.canvas-tools button.is-on { background: var(--ink); color: var(--card); }
+.host-ram--hot em { background: var(--warn) !important; }
+.host-ram--over em { background: var(--bad) !important; }
+.mem-host { font-size: 12px; margin: 0 0 6px; }
+.mem-host--hot { color: var(--warn); }
+.mem-host--over { color: var(--bad); font-weight: 700; }
+.mem-list { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; }
+.mem-list li { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-size: 12px; cursor: pointer; padding: 3px 4px; border-radius: 6px; }
+.mem-list li:hover { background: var(--sheet); }
+.mem-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.mem-list em { font-style: normal; font-variant-numeric: tabular-nums; }
+.mem-list i { grid-column: 1 / -1; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.mem-list i b { display: block; height: 100%; background: var(--good); }
+.mem-list i b.hot { background: var(--warn); }
+.mem-list i b.over { background: var(--bad); }

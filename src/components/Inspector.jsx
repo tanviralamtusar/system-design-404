@@ -251,12 +251,16 @@ export function HostInspector({ host, stats, members, onUpdate, onFail, onDelete
           <input type="number" min="0" max="95" step="1" placeholder="0" value={host.reserved != null ? Math.round(host.reserved * 100) : ''}
             onChange={(e) => setNum('reserved', e.target.value, { max: 95, scale: 100 })} />
         </label>
+        <label className="field">
+          <span>Background RAM <small>GB</small></span>
+          <input type="number" min="0" step="0.5" placeholder="0" value={host.reservedRam ?? ''} onChange={(e) => setNum('reservedRam', e.target.value)} />
+        </label>
         <label className="field field--wide">
           <span>Monthly price <small>$ (what you actually pay)</small></span>
           <input type="number" min="0" placeholder={String(Math.round(hwCost(hs)))} value={host.cost ?? ''} onChange={(e) => setNum('cost', e.target.value)} />
         </label>
       </div>
-      <p className="field-note">Background CPU is load that is there without any traffic: idle containers, databases, builds, cron jobs. Copy it from your monitoring.</p>
+      <p className="field-note">Background CPU is load that is there without any traffic: idle containers, databases, builds, cron jobs. Copy it from your monitoring. Background RAM is the same for memory: other projects sharing this machine.</p>
       {stats && (
         <dl className="stats">
           <div><dt>CPU</dt><dd className={stats.util > 1 ? 'bad' : stats.cpu > 0.85 ? 'warn' : ''}>{Math.round(stats.cpu * 100)}%</dd></div>

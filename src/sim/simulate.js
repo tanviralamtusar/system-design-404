@@ -433,8 +433,20 @@ function pass({ design, traffic, byId, kids, failed, spec, allowCustom, nodeHost
         return writeToDb(rps, lat, childrenOf(id, DATA), 'bg', null);
       }
       case 'db':
-      case 'nosql':
+      case 'nosql': {
+        // Read-through store: a database with a hit ratio (custom.hit) and an upstream API behind it
+        // answers that share of reads itself and fetches the rest from the API (cache-aside on a miss).
+        const upstream = kind === 'read' ? childrenOf(id, ['api']) : [];
+        if (upstream.length && typeof spec[id].hit === 'number') {
+          serve(kind, rps * spec[id].hit, lat);
+          const miss = rps * (1 - spec[id].hit);
+          const live = upstream.filter((e) => healthy(e.to));
+          if (!live.length) return fail(kind, miss, 'Cache misses need an upstream API that is down');
+          for (const e of live) via(e, kind, miss / live.length, lat, null);
+          return;
+        }
         return serve(kind, rps, lat);
+      }
       case 'replica':
         if (kind === 'write' && !ctx?.promoted) return fail(kind, rps, 'Writes reached replicas only: they are read-only');
         if (kind === 'bg' && !ctx?.promoted) return fail(kind, rps, 'Writes reached replicas only: they are read-only');
