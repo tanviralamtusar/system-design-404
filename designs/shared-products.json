@@ -1,0 +1,101 @@
+{
+  "app": "system-design-practice",
+  "version": 2,
+  "design": {
+    "scenario": {
+      "id": "shared-products",
+      "allowance": 100000,
+      "siteOne": 500000,
+      "siteTwo": 500000,
+      "hitRate": 95,
+      "refreshCalls": 10000
+    },
+    "nodes": [
+      {
+        "id": "products-users",
+        "type": "client",
+        "name": "Visitors",
+        "x": 40,
+        "y": 270
+      },
+      {
+        "id": "products-site-one",
+        "type": "frontend",
+        "name": "Tradeon UI",
+        "x": 250,
+        "y": 170
+      },
+      {
+        "id": "products-site-two",
+        "type": "frontend",
+        "name": "Second site UI",
+        "x": 250,
+        "y": 370
+      },
+      {
+        "id": "products-api",
+        "type": "api",
+        "name": "Product API",
+        "x": 460,
+        "y": 270
+      },
+      {
+        "id": "products-backend",
+        "type": "backend",
+        "name": "Backend",
+        "x": 670,
+        "y": 270
+      },
+      {
+        "id": "products-sql",
+        "type": "db",
+        "product": "postgres",
+        "name": "SQL cache",
+        "x": 880,
+        "y": 270
+      }
+    ],
+    "edges": [
+      {
+        "id": "products-route-one",
+        "from": "products-users",
+        "to": "products-site-one",
+        "weight": 500000
+      },
+      {
+        "id": "products-route-two",
+        "from": "products-users",
+        "to": "products-site-two",
+        "weight": 500000
+      },
+      {
+        "id": "products-one-api",
+        "from": "products-site-one",
+        "to": "products-api"
+      },
+      {
+        "id": "products-two-api",
+        "from": "products-site-two",
+        "to": "products-api"
+      },
+      {
+        "id": "products-api-backend",
+        "from": "products-api",
+        "to": "products-backend"
+      },
+      {
+        "id": "products-backend-sql",
+        "from": "products-backend",
+        "to": "products-sql"
+      }
+    ]
+  },
+  "traffic": {
+    "rps": 0.38580246913580246,
+    "readRatio": 1,
+    "mediaShare": 0,
+    "botShare": 0,
+    "peak": 1
+  },
+  "presets": []
+}

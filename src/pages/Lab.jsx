@@ -7,12 +7,16 @@ import { CATALOG, SIZES, displayName, findProduct, DEFAULT_HOST } from '../sim/c
 import { simulate, evaluate, chaosScan, normTraffic, fmtPct, fmtRps } from '../sim/simulate.js';
 import { CHALLENGES, findChallenge, build } from '../data/challenges.js';
 import { load, save } from '../store.js';
+import ProductScenario from '../components/ProductScenario.jsx';
+import { PRODUCT_SCENARIO_ID, makeProductDesign, normalizeProductScenario, projectProductUsage, upgradeProductDesign } from '../sim/productScenario.js';
 
 const starter = () => ({ nodes: [{ id: newId('n'), type: 'client', x: 40, y: 340 }], edges: [] });
 const DEFAULT_TRAFFIC = { rps: 1000, readRatio: 0.9, mediaShare: 0, botShare: 0, peak: 1 };
 
 const TEMPLATES = {
   empty: { label: 'Empty canvas', make: starter },
+  products: { label: 'Tradeon · shared SQL product cache', make: makeProductDesign },
+  layers: { label: 'Frontend → API → Backend → DB', make: () => build([['u:client'], ['f:frontend'], ['a:api'], ['b:backend'], ['d:db']], [['u', 'f'], ['f', 'a'], ['a', 'b'], ['b', 'd']]) },
   monolith: { label: 'One raw server', make: () => build([['u:client'], ['s:server']], [['u', 's']]) },
   single: { label: 'App + database', make: () => build([['u:client'], ['a:app'], ['d:db']], [['u', 'a'], ['a', 'd']]) },
   classic: {
@@ -106,15 +110,17 @@ function sanitizeDesign(raw) {
     .filter((e) => e && ids.has(e.from) && ids.has(e.to) && e.from !== e.to)
     .slice(0, 2000)
     .map((e) => ({ id: str(e.id, 60) || newId('e'), from: e.from, to: e.to, ...nums(e, ['latency', 'weight']) }));
-  return hosts.length ? { nodes, edges, hosts } : { nodes, edges };
+  return { nodes, edges, ...(hosts.length ? { hosts } : {}), ...(raw.scenario?.id === PRODUCT_SCENARIO_ID ? { scenario: normalizeProductScenario(raw.scenario) } : {}) };
 }
 
-export default function Lab({ challengeId, navigate }) {
+export default function Lab({ challengeId, scenarioId, navigate }) {
   const challenge = challengeId ? findChallenge(challengeId) : null;
-  const storeKey = challenge ? `ch:${challenge.id}` : 'lab';
+  const isProductRoute = !challenge && scenarioId === PRODUCT_SCENARIO_ID;
+  const storeKey = challenge ? `ch:${challenge.id}` : isProductRoute ? `lab:${PRODUCT_SCENARIO_ID}` : 'lab';
   const allowCustom = !challenge;
+  const initialDesign = () => upgradeProductDesign(load(storeKey, null) || (isProductRoute ? makeProductDesign() : starter()));
 
-  const [design, setDesign] = useState(() => load(storeKey, null) || starter());
+  const [design, setDesign] = useState(initialDesign);
   const [traffic, setTraffic] = useState(() => normTraffic(challenge?.traffic || load('lab-traffic', DEFAULT_TRAFFIC)));
   const [selected, setSelected] = useState(null);
   const [toast, setToast] = useState(null);
@@ -129,7 +135,7 @@ export default function Lab({ challengeId, navigate }) {
   const fileRef = useRef(null);
 
   useEffect(() => {
-    setDesign(load(storeKey, null) || starter());
+    setDesign(initialDesign());
     setTraffic(normTraffic(challenge?.traffic || load('lab-traffic', DEFAULT_TRAFFIC)));
     setSelected(null);
     setHintsShown(0);
@@ -172,7 +178,14 @@ export default function Lab({ challengeId, navigate }) {
     }
   };
 
-  const result = useMemo(() => simulate(design, traffic, { allowCustom }), [design, traffic, allowCustom]);
+  const scenario = !challenge && design.scenario?.id === PRODUCT_SCENARIO_ID ? normalizeProductScenario(design.scenario) : null;
+  const scenarioUsage = scenario ? projectProductUsage(scenario) : null;
+  const effectiveTraffic = scenario ? { ...traffic, rps: scenarioUsage.rps, readRatio: 1, mediaShare: 0, botShare: 0 } : traffic;
+  const result = useMemo(() => simulate(design, effectiveTraffic, { allowCustom }), [design, traffic, allowCustom]);
+  const updateScenario = (patch) => {
+    const next = normalizeProductScenario({ ...scenario, ...patch });
+    change({ ...design, scenario: next, edges: design.edges.map((e) => e.id === 'products-route-one' ? { ...e, weight: next.siteOne } : e.id === 'products-route-two' ? { ...e, weight: next.siteTwo } : e) });
+  };
   const checks = useMemo(() => (challenge ? evaluate(challenge, design, simulate(design, challenge.traffic, { allowCustom: false })) : null), [challenge, design]);
   const passed = checks?.every((c) => c.ok);
 
@@ -185,7 +198,7 @@ export default function Lab({ challengeId, navigate }) {
   }, [passed, challenge, done]);
 
   const addNode = ({ type, product, preset }) => {
-    const col = { client: 0, cdn: 1, ratelimit: 1, lb: 2, gateway: 2, server: 3, app: 3, service: 3, cache: 4, queue: 4, stream: 4, blob: 5, worker: 5, db: 6, replica: 6, nosql: 6 }[type] ?? 3;
+    const col = { client: 0, frontend: 1, api: 2, backend: 3, cdn: 1, ratelimit: 1, lb: 2, gateway: 2, server: 3, app: 3, service: 3, cache: 4, queue: 4, stream: 4, blob: 5, worker: 5, db: 6, replica: 6, nosql: 6 }[type] ?? 3;
     const x = 40 + col * 180;
     let y = 30;
     while (design.nodes.some((n) => Math.abs(n.x - x) < 150 && Math.abs(n.y - y) < 80) && y < 680) y += 90;
@@ -200,6 +213,7 @@ export default function Lab({ challengeId, navigate }) {
     if (selected.kind === 'host') return; // hosts are removed from their panel
     if (selected.kind === 'node') {
       change({
+        ...design,
         nodes: design.nodes.filter((n) => n.id !== selected.id),
         edges: design.edges.filter((e) => e.from !== selected.id && e.to !== selected.id),
       });
@@ -263,16 +277,16 @@ export default function Lab({ challengeId, navigate }) {
       if (e.to === id) return [{ ...e, id: newId('e'), to: copy.id }];
       return [];
     });
-    change({ nodes: [...design.nodes, copy], edges: [...design.edges, ...edges] });
+    change({ ...design, nodes: [...design.nodes, copy], edges: [...design.edges, ...edges] });
     setSelected({ kind: 'node', id: copy.id });
   };
 
   const exportDesign = () => {
-    const data = { app: 'system-design-practice', version: 2, design, traffic, presets };
+    const data = { app: 'system-design-practice', version: 2, design, traffic: effectiveTraffic, presets };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `${challenge ? challenge.id : 'design'}.json`;
+    a.download = `${challenge ? challenge.id : scenario ? PRODUCT_SCENARIO_ID : 'design'}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
@@ -280,7 +294,7 @@ export default function Lab({ challengeId, navigate }) {
   const importDesign = async (file) => {
     try {
       const raw = JSON.parse(await file.text());
-      const next = sanitizeDesign(raw.design || raw);
+      const next = upgradeProductDesign(sanitizeDesign(raw.design || raw));
       change(next);
       if (!challenge && raw.traffic) setTraffic(normTraffic(raw.traffic));
       if (Array.isArray(raw.presets)) {
@@ -320,16 +334,17 @@ export default function Lab({ challengeId, navigate }) {
   const selEdge = selected?.kind === 'edge' ? design.edges.find((e) => e.id === selected.id) : null;
   const selHost = !challenge && selected?.kind === 'host' ? (design.hosts || []).find((h) => h.id === selected.id) : null;
   const reasons = Object.entries(result.reasons).sort((a, b) => b[1] - a[1]).slice(0, 3);
-  const t = traffic;
+  const t = effectiveTraffic;
 
   return (
     <div className="lab">
       <div className="lab-top">
         <div>
           <p className="eyebrow">{challenge ? `Practice · ${challenge.level}` : 'Design Lab · sandbox'}</p>
-          <h1 className="lab-title">{challenge ? challenge.title : 'Build anything, then break it'}</h1>
+          <h1 className="lab-title">{challenge ? challenge.title : scenario ? 'Share your product cache across two sites' : 'Build anything, then break it'}</h1>
         </div>
         <div className="lab-actions">
+          {!challenge && !isProductRoute && <button type="button" className="btn btn--small" onClick={() => navigate('#/lab/shared-products')}>Product cache scenario</button>}
           <button type="button" className="btn btn--ghost btn--small" onClick={undo} disabled={!history.current.length} title="Undo (Ctrl+Z)">
             <Icon name="reset" size={15} /> Undo
           </button>
@@ -369,6 +384,8 @@ export default function Lab({ challengeId, navigate }) {
           }} />
         </div>
       </div>
+
+      {scenario && <ProductScenario scenario={scenario} onChange={updateScenario} />}
 
       <div className="lab-grid">
         <Palette
@@ -453,16 +470,17 @@ export default function Lab({ challengeId, navigate }) {
           ) : (
             <div className="panel">
               <p className="panel-label">Traffic</p>
+              {scenario && <p className="field-note">Combined storefront reads, averaged over 30 days. Edit monthly volumes above. All requests here are product reads.</p>}
               <label className="slider">
                 <span className="slider-head">
                   Requests / second
-                  <input type="number" min="0" max="1000000" className="num-inline" value={t.rps} aria-label="Requests per second"
+                  <input type="number" min="0" max="1000000" className="num-inline" value={scenario ? +t.rps.toFixed(4) : t.rps} disabled={!!scenario} aria-label="Requests per second"
                     onChange={(e) => {
                       const v = Number(e.target.value);
                       if (Number.isFinite(v) && v >= 0) setTraffic({ ...t, rps: Math.min(1e6, Math.round(v)) });
                     }} />
                 </span>
-                <input type="range" min="0" max={RPS_STEPS.length - 1} value={nearestStep(t.rps)} onChange={(e) => setTraffic({ ...t, rps: RPS_STEPS[+e.target.value] })} />
+                {!scenario && <input type="range" min="0" max={RPS_STEPS.length - 1} value={nearestStep(t.rps)} onChange={(e) => setTraffic({ ...t, rps: RPS_STEPS[+e.target.value] })} />}
               </label>
               <label className="slider">
                 <span>Peak multiplier <b>×{t.peak}</b> {t.peak > 1 && <small>→ {fmtRps(t.rps * t.peak)} req/s</small>}</span>
@@ -470,15 +488,15 @@ export default function Lab({ challengeId, navigate }) {
               </label>
               <label className="slider">
                 <span>Reads <b>{Math.round(t.readRatio * 100)}%</b> · writes <b>{Math.round((1 - t.readRatio) * 100)}%</b></span>
-                <input type="range" min="0" max="100" step="5" value={Math.round(t.readRatio * 100)} onChange={(e) => setTraffic({ ...t, readRatio: +e.target.value / 100 })} />
+                <input type="range" disabled={!!scenario} min="0" max="100" step="5" value={Math.round(t.readRatio * 100)} onChange={(e) => setTraffic({ ...t, readRatio: +e.target.value / 100 })} />
               </label>
               <label className="slider">
                 <span>File downloads <b>{Math.round(t.mediaShare * 100)}%</b> <small>of reads (images, video)</small></span>
-                <input type="range" min="0" max="100" step="5" value={Math.round(t.mediaShare * 100)} onChange={(e) => setTraffic({ ...t, mediaShare: +e.target.value / 100 })} />
+                <input type="range" disabled={!!scenario} min="0" max="100" step="5" value={Math.round(t.mediaShare * 100)} onChange={(e) => setTraffic({ ...t, mediaShare: +e.target.value / 100 })} />
               </label>
               <label className="slider">
                 <span>Bot traffic <b>+{Math.round(t.botShare * 100)}%</b> <small>on top of real users</small></span>
-                <input type="range" min="0" max="500" step="25" value={Math.round(t.botShare * 100)} onChange={(e) => setTraffic({ ...t, botShare: +e.target.value / 100 })} />
+                <input type="range" disabled={!!scenario} min="0" max="500" step="25" value={Math.round(t.botShare * 100)} onChange={(e) => setTraffic({ ...t, botShare: +e.target.value / 100 })} />
               </label>
             </div>
           )}
@@ -516,7 +534,7 @@ export default function Lab({ challengeId, navigate }) {
               <>
                 <p className="panel-label">Chaos test</p>
                 <p className="muted">Kill each component in turn and see what breaks. Select a component or connection to configure it.</p>
-                <button type="button" className="btn btn--small" onClick={() => setChaos({ base: result.errorRate, list: chaosScan(design, traffic, { allowCustom }) })}>
+                <button type="button" className="btn btn--small" onClick={() => setChaos({ base: result.errorRate, list: chaosScan(design, effectiveTraffic, { allowCustom }) })}>
                   <Icon name="flame" size={15} /> Run chaos test
                 </button>
                 {chaos && (

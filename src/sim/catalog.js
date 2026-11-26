@@ -28,6 +28,18 @@ export const CATALOG = {
     label: 'Raw server', short: 'Server', capacity: 1000, latency: 25, cost: 100, writeCost: 2, tone: 'green', group: 'Compute',
     blurb: 'One machine that does everything: web server, app, database, cache and files on local disk. With nothing behind it, it answers every request itself. Connect a database, cache, queue or storage to hand those jobs off.',
   },
+  frontend: {
+    label: 'Frontend', short: 'Frontend', capacity: 10000, latency: 5, cost: 20, tone: 'violet', group: 'Application',
+    blurb: 'Website or app interface. Serves a static page on its own; connect an API or backend to model requests for dynamic data.',
+  },
+  api: {
+    label: 'API', short: 'API', capacity: 1200, latency: 15, cost: 80, tone: 'orange', group: 'Application',
+    blurb: 'HTTP endpoint or external API. Answers requests on its own, or forwards them to connected backends or databases. Monthly supplier quota is estimated separately in the product scenario.',
+  },
+  backend: {
+    label: 'Backend', short: 'Backend', capacity: 800, latency: 30, cost: 70, tone: 'green', group: 'Application',
+    blurb: 'Server-side business logic. Reads from cache and database, sends writes to a queue or database, or calls a connected API when no storage is attached.',
+  },
   app: {
     label: 'App server', short: 'App', capacity: 800, latency: 30, cost: 70, tone: 'green', group: 'Compute',
     blurb: 'Runs your code. Reads → cache, then database. Files → object storage. Writes → queue or stream if connected, else the database.',
@@ -45,7 +57,7 @@ export const CATALOG = {
     blurb: 'In-memory key/value store. Answers 80% of reads in ~1 ms; misses fall through to the database.',
   },
   db: {
-    label: 'SQL database', short: 'DB', capacity: 2000, latency: 8, cost: 300, writeCost: 2, tone: 'mint', group: 'Data',
+    label: 'DB (SQL database)', short: 'DB', capacity: 2000, latency: 8, cost: 300, writeCost: 2, tone: 'mint', group: 'Data',
     blurb: 'Relational primary: joins and transactions. A write costs twice a read. Several primaries behind a server = shards.',
   },
   replica: {
@@ -70,8 +82,8 @@ export const CATALOG = {
   },
 };
 
-export const PALETTE_ORDER = ['client', 'cdn', 'ratelimit', 'lb', 'gateway', 'server', 'app', 'service', 'worker', 'cache', 'db', 'replica', 'nosql', 'blob', 'queue', 'stream'];
-export const GROUPS = ['Traffic', 'Edge', 'Routing', 'Compute', 'Data', 'Messaging'];
+export const PALETTE_ORDER = ['client', 'frontend', 'api', 'backend', 'cdn', 'ratelimit', 'lb', 'gateway', 'server', 'app', 'service', 'worker', 'cache', 'db', 'replica', 'nosql', 'blob', 'queue', 'stream'];
+export const GROUPS = ['Traffic', 'Application', 'Edge', 'Routing', 'Compute', 'Data', 'Messaging'];
 
 // Real-world products. Numbers are rough, illustrative ballparks for one typical instance,
 // not benchmarks or price quotes; they exist to make trade-offs feel real.
@@ -146,7 +158,7 @@ export const SIZES = {
   L: { label: 'Large', cap: 2, cost: 2.2 },
   XL: { label: 'X-Large', cap: 4, cost: 4.8 },
 };
-export const SIZABLE = ['lb', 'gateway', 'ratelimit', 'app', 'service', 'worker', 'cache', 'db', 'replica', 'nosql', 'queue', 'stream'];
+export const SIZABLE = ['frontend', 'api', 'backend', 'lb', 'gateway', 'ratelimit', 'app', 'service', 'worker', 'cache', 'db', 'replica', 'nosql', 'queue', 'stream'];
 export const LB_TYPES = ['lb', 'gateway'];
 export const DB_TYPES = ['db', 'replica', 'nosql'];
 
@@ -158,6 +170,9 @@ export const CUSTOM_KEYS = ['capacity', 'latency', 'cost', 'hit', 'writeCost', '
 // Changing the hardware scales capacity, latency, hit rate and cost relative to it.
 // Managed services (Users, CDN, object storage) have no hardware to configure.
 export const HW_REF = {
+  frontend: { cpu: 2, ram: 4, disk: 'ssd', diskGB: 20, bandwidth: 1 },
+  api: { cpu: 2, ram: 4, disk: 'ssd', diskGB: 20, bandwidth: 1 },
+  backend: { cpu: 2, ram: 4, disk: 'ssd', diskGB: 20, bandwidth: 1 },
   lb: { cpu: 2, ram: 4, disk: 'ssd', diskGB: 20, bandwidth: 10 },
   gateway: { cpu: 4, ram: 8, disk: 'ssd', diskGB: 20, bandwidth: 10 },
   ratelimit: { cpu: 2, ram: 4, disk: 'ssd', diskGB: 20, bandwidth: 10 },
@@ -189,11 +204,12 @@ export const hwCost = (hw) => hw.cpu * PRICE.cpu + hw.ram * PRICE.ram + hw.diskG
 
 // What the hardware is used for, per component type.
 const ROLE = {
+  frontend: 'compute', api: 'compute', backend: 'compute',
   lb: 'compute', gateway: 'compute', ratelimit: 'compute', app: 'compute', service: 'compute', worker: 'compute',
   server: 'server', cache: 'cache', db: 'data', replica: 'data', nosql: 'data', queue: 'log', stream: 'log',
 };
 // RAM a compute machine wants per vCPU before it starts swapping.
-const RAM_PER_CPU = { lb: 1, gateway: 1, ratelimit: 1, app: 2, service: 2, worker: 2, server: 2 };
+const RAM_PER_CPU = { frontend: 2, api: 2, backend: 2, lb: 1, gateway: 1, ratelimit: 1, app: 2, service: 2, worker: 2, server: 2 };
 
 export function hardwareOf(node) {
   const ref = HW_REF[node.type];

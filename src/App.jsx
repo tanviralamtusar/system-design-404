@@ -44,7 +44,7 @@ export default function App() {
   if (section === 'learn' && id) page = <Lesson key={id} id={id} navigate={navigate} />;
   else if (section === 'practice' && id) page = <Lab key={id} challengeId={id} navigate={navigate} />;
   else if (section === 'practice') page = <Practice />;
-  else if (section === 'lab') page = <Lab navigate={navigate} />;
+  else if (section === 'lab') page = <Lab key={id || 'sandbox'} scenarioId={id} navigate={navigate} />;
   else if (section === 'cheatsheets') page = <Cheatsheets />;
   else page = <Home />;
 

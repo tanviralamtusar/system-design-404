@@ -1,5 +1,8 @@
 // Small line icons drawn on a 24×24 grid. They use currentColor.
 const P = {
+  frontend: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M7 6.5h.01M10 6.5h.01M7 13h4M7 16h9" /></>,
+  api: <><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16" /></>,
+  backend: <><rect x="3" y="4" width="18" height="6" rx="2" /><rect x="3" y="14" width="18" height="6" rx="2" /><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6M12 10v4" /></>,
   client: (
     <>
       <circle cx="9" cy="8" r="3" />

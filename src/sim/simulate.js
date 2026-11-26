@@ -22,7 +22,7 @@ const bytesPerSec = (gbps) => (gbps * 1e9) / 8;
 
 const DATA = ['db', 'replica', 'nosql'];
 const PRIMARY = ['db', 'nosql'];
-const APP_LIKE = ['app', 'service', 'server'];
+const APP_LIKE = ['app', 'service', 'server', 'backend'];
 
 export function effLatency(base, util) {
   const u = Math.min(util, 1);
@@ -384,6 +384,23 @@ function pass({ design, traffic, byId, kids, failed, spec, allowCustom, nodeHost
       case 'app':
       case 'service':
         return route(id, kind, rps, lat, false);
+      case 'frontend':
+        if (!kids[id].length && (kind === 'write' || kind === 'bg'))
+          return fail(kind, rps, 'A static frontend needs an API or backend to handle writes');
+        return kids[id].length
+          ? spread(kids[id], kind, rps, lat, null, true, `${label(id)} has no healthy dependencies`)
+          : serve(kind, rps, lat);
+      case 'api':
+        return kids[id].length
+          ? spread(kids[id], kind, rps, lat, null, true, `${label(id)} has no healthy dependencies`)
+          : serve(kind, rps, lat);
+      case 'backend': {
+        const services = childrenOf(id, ['api', 'backend', 'app', 'service']);
+        const storage = childrenOf(id, [...DATA, 'cache', 'queue', 'stream', 'blob']);
+        if (services.length && !storage.length && kind !== 'bg')
+          return spread(services, kind, rps, lat, null, true, `${label(id)} has no healthy services`);
+        return route(id, kind, rps, lat, false);
+      }
       case 'server':
         return route(id, kind, rps, lat, true);
       case 'cache': {
@@ -518,5 +535,6 @@ export function fmtPct(x) {
 
 export function fmtRps(x) {
   if (x >= 1000) return `${(x / 1000).toFixed(x >= 10000 ? 0 : 1)}k`;
+  if (x > 0 && x < 1) return x < 0.01 ? '<0.01' : x.toFixed(2);
   return `${Math.round(x)}`;
 }

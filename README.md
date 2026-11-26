@@ -6,7 +6,7 @@ An interactive system design course and practice site.
   (CPU, RAM, disk, network) through load balancing, caching, replication, sharding, queues, object storage, CDNs,
   API gateways and microservices, event streams, rate limiting, and a full URL shortener.
 - **Practice**: 9 challenges with fixed traffic and requirements (latency, errors, budget, survive any failure, no backlog), checked live.
-- **Design Lab**: a free sandbox with 15 component types (raw server, app server, microservice, worker, load balancer,
+- **Design Lab**: a free sandbox with 18 component types (frontend, API, backend, raw server, app server, microservice, worker, load balancer,
   API gateway, rate limiter, CDN, cache, SQL, replica, NoSQL, object storage, queue, event stream) and 44 real-world
   products (NGINX, Redis, PostgreSQL, Kafka, S3, Cloudflare…). Traffic settings: req/s, peak multiplier, read/write mix,
   file downloads, bot traffic. Kill components or run a chaos test. Zoom (buttons or Ctrl + scroll), fit to screen,
@@ -20,6 +20,8 @@ An interactive system design course and practice site.
   CPU and network, the host carries the cost, its measured background CPU is taken into account, and killing it takes
   everything on it down. `designs/coolify-vps.json` is a snapshot of a real Coolify server; load it with **Import**.
 - **Cheatsheets**: latency numbers, estimation, availability, hardware rules of thumb, real-world products, interview framework.
+
+The **Product cache scenario** button in Design Lab opens `#/lab/shared-products`: two storefronts sharing a backend and SQL product cache, inspired by Tradeon. Set the supplier allowance (100,000 calls/month by default), monthly reads for each site, fresh cache hit rate and refresh calls. Monthly quota estimates are separate from the canvas's serving-capacity model. Example traffic assumptions are editable. The scenario has its own saved canvas and supports undo and JSON export/import; `designs/shared-products.json` is a ready-to-import snapshot.
 
 Product and hardware figures are rough, illustrative ballparks, not benchmarks or price quotes.
 Progress, designs and saved components are kept in the browser's localStorage.

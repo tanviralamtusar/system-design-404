@@ -619,6 +619,29 @@ kbd {
 .metric b { font-size: 17px; font-variant-numeric: tabular-nums; }
 .metric span { font-weight: 700; }
 
+/* Tradeon scenario: blue accents from its storefront, with the lab's theme tokens. */
+.product-scenario { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 1fr); gap: 28px; padding: 22px 24px; margin-bottom: 20px; border: 1.5px solid var(--ink); border-top: 4px solid #1976b3; border-radius: var(--radius); background: var(--card); box-shadow: var(--pop); }
+.product-scenario h2 { font-size: 23px; letter-spacing: -0.04em; margin: 0 0 12px; }
+.product-scenario-intro > p:not(.eyebrow) { max-width: 66ch; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.product-scenario .eyebrow { color: var(--pkt-req); }
+.product-flow { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; list-style: none; counter-reset: flow; margin: 16px 0; }
+.product-flow li { counter-increment: flow; padding: 7px 10px; background: color-mix(in srgb, var(--pkt-req) 10%, var(--card)); border: 1px solid color-mix(in srgb, var(--pkt-req) 35%, var(--line)); border-radius: 7px; font-size: 11px; }
+.product-flow li::before { content: counter(flow) '. '; color: var(--pkt-req); font-weight: 700; }
+.product-scenario details { font-size: 11px; line-height: 1.8; color: var(--muted); }
+.product-scenario summary { cursor: pointer; color: var(--ink); font-weight: 700; }
+.product-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.product-inputs .field { font-size: 10px; }
+.product-inputs input { font-variant-numeric: tabular-nums; }
+.product-hit { margin: 0 0 12px; }
+.product-budget { display: grid; gap: 5px; padding: 12px 14px; background: var(--good-bg); border: 1px solid var(--good); border-radius: 8px; font-size: 12px; }
+.product-budget span, .product-budget small { font-size: 11px; }
+.product-budget--over { background: var(--bad-bg); border-color: var(--bad); }
+.product-budget progress { width: 100%; height: 8px; accent-color: var(--good); }
+.product-budget--over progress { accent-color: var(--bad); }
+.product-assumptions { font-size: 10px; line-height: 1.65; color: var(--muted); margin: 10px 0 0; }
+@media (max-width: 1000px) { .product-scenario { grid-template-columns: 1fr; gap: 18px; } }
+@media (max-width: 520px) { .product-scenario { padding: 16px; } .product-inputs { grid-template-columns: 1fr; } .product-scenario h2 { font-size: 20px; } }
+
 /* palette */
 .pal-item { transition: transform 0.08s, box-shadow 0.08s; line-height: 1.25; min-height: 34px; }
 .pal-item:hover { transform: translate(-1px, -1px); box-shadow: var(--pop-lg); }
